@@ -733,30 +733,26 @@ function HistoryPage({ history, setHistory, onBack }) {
 /* ------------------------------------------------------------------ */
 
 function MemberSlotRow({ slot, members, groupNames, onChangeGroup, onChangeMember, onRemove, removable }) {
-  const [openGroup, setOpenGroup] = useState(false);
   const [openMember, setOpenMember] = useState(false);
   const current = members.find((m) => m.id === slot.memberId);
   const groupMembers = members.filter((m) => m.groupName === slot.groupFilter);
 
   return (
     <div className="flex items-center gap-2 border-l-2 border-dashed border-indigo-200 pl-3 py-1">
-      <div className="relative">
-        <button onClick={() => { setOpenGroup((v) => !v); setOpenMember(false); }} className="text-sm text-indigo-600 font-bold whitespace-nowrap flex items-center gap-0.5">
-          {slot.groupFilter || "グループ"} <ChevronDown size={12} />
-        </button>
-        {openGroup && (
-          <div className="absolute z-10 mt-1 bg-white rounded-2xl shadow-lg py-1.5 min-w-[140px] max-h-56 overflow-auto">
-            <button className="block w-full text-left px-3 py-1.5 text-sm text-gray-400" onClick={() => { onChangeGroup(null); setOpenGroup(false); }}>選択なし</button>
-            {groupNames.map((g) => (
-              <button key={g} className="block w-full text-left px-3 py-1.5 text-sm text-gray-800" onClick={() => { onChangeGroup(g); setOpenGroup(false); }}>{g}</button>
-            ))}
-          </div>
-        )}
-      </div>
+      <select
+        value={slot.groupFilter || ""}
+        onChange={(e) => onChangeGroup(e.target.value || null)}
+        className="text-sm text-indigo-600 font-bold bg-transparent border-none outline-none max-w-[110px]"
+      >
+        <option value="">グループ</option>
+        {groupNames.map((g) => (
+          <option key={g} value={g}>{g}</option>
+        ))}
+      </select>
 
       {slot.groupFilter && (
         <div className="relative">
-          <button onClick={() => { setOpenMember((v) => !v); setOpenGroup(false); }} className="text-sm text-indigo-600 font-bold whitespace-nowrap flex items-center gap-1">
+          <button onClick={() => setOpenMember((v) => !v)} className="text-sm text-indigo-600 font-bold whitespace-nowrap flex items-center gap-1">
             {current ? (
               <>
                 <IconBadge colorKey={current.iconColorName} symbolKey={current.iconSymbol} size={18} />
