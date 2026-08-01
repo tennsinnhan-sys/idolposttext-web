@@ -99,15 +99,15 @@ function saveLocal(key, value) {
   }
 }
 
-async function loadSharedMembers() {
-  if (!supabase) return loadLocal("members", []);
-  const { data, error } = await supabase.from("shared_data").select("value").eq("key", "members").maybeSingle();
-  if (error || !data) return [];
-  return data.value || [];
+async function loadShared(key, fallback) {
+  if (!supabase) return loadLocal(key, fallback);
+  const { data, error } = await supabase.from("shared_data").select("value").eq("key", key).maybeSingle();
+  if (error || !data) return fallback;
+  return data.value ?? fallback;
 }
-async function saveSharedMembers(members) {
-  if (!supabase) { saveLocal("members", members); return; }
-  await supabase.from("shared_data").upsert({ key: "members", value: members, updated_at: new Date().toISOString() });
+async function saveShared(key, value) {
+  if (!supabase) { saveLocal(key, value); return; }
+  await supabase.from("shared_data").upsert({ key, value, updated_at: new Date().toISOString() });
 }
 
 /* ------------------------------------------------------------------ */
@@ -424,7 +424,7 @@ function MembersPage({ members, setMembers, onBack }) {
     <div>
       <TopBar title="メンバー一覧" onBack={onBack} />
       <p className="text-[11px] text-indigo-400 bg-indigo-50 rounded-2xl px-3 py-2 mb-3">
-        メンバー情報はこのアプリを使う全員で共有されます。誰でも追加・編集・削除できるのでご注意ください。
+        メンバー情報はこのアプリを使う全員で共有されます。誰でも追加・編集・削除できるのでご注意ください（イベント・テンプレート・投稿履歴・現在の選択状態も同様に共有されます）。
       </p>
       <div className="flex gap-2 mb-4">
         <SoftButton tone="indigo" onClick={() => setEditing("new")}>
@@ -482,7 +482,7 @@ function MembersPage({ members, setMembers, onBack }) {
 /* ------------------------------------------------------------------ */
 
 function emptyEvent() {
-  return { id: uid(), date: new Date().toISOString().slice(0, 10), eventName: "", place: "", regulation: "" };
+  return { id: uid(), date: new Date().toISOString().slice(0, 10), eventName: "", place: "" };
 }
 
 function EventForm({ initial, onCancel, onSave, onDelete }) {
@@ -494,7 +494,6 @@ function EventForm({ initial, onCancel, onSave, onDelete }) {
         <TextInput type="date" value={e.date} onChange={set("date")} placeholder="日付" />
         <TextInput value={e.eventName} onChange={set("eventName")} placeholder="イベント名" />
         <TextInput value={e.place} onChange={set("place")} placeholder="会場" />
-        <TextInput value={e.regulation} onChange={set("regulation")} placeholder="レギュレーション" />
       </div>
       <div className="flex gap-2 mt-5">
         <SoftButton tone="indigo" onClick={() => onSave(e)} disabled={!e.eventName.trim()}>保存</SoftButton>
@@ -787,8 +786,13 @@ function MemberSlotRow({ slot, members, groupNames, onChangeGroup, onChangeMembe
   );
 }
 
-function HomePage({ members, events, memberSlots, setMemberSlots, selectedEventId, setSelectedEventId, templates, activeTemplateContent, setActiveTemplateId, activeTemplateId, setActiveTemplateContent, values, onNavigate, recordHistory }) {
-  const groupNames = useMemo(() => dedupedNonEmpty(members.map((m) => m.groupName)).sort(), [members]);
+function HomePage({ members, events, memberSlots, setMemberSlots, selectedEventId, setSelectedEventId, templates, activeTemplateContent, setActiveTemplateId, activeTemplateId, setActiveTemplateContent, values, recentGroups, touchGroup, onNavigate, recordHistory }) {
+  const groupNames = useMemo(() => {
+    const all = dedupedNonEmpty(members.map((m) => m.groupName));
+    const used = recentGroups.filter((g) => all.includes(g));
+    const rest = all.filter((g) => !used.includes(g)).sort();
+    return [...used, ...rest];
+  }, [members, recentGroups]);
   const selectedEvent = events.find((e) => e.id === selectedEventId);
   const [openEvent, setOpenEvent] = useState(false);
   const [copyFlash, setCopyFlash] = useState(false);
@@ -837,8 +841,15 @@ function HomePage({ members, events, memberSlots, setMemberSlots, selectedEventI
                   members={members}
                   groupNames={groupNames}
                   removable={memberSlots.length > 1}
-                  onChangeGroup={(g) => updateSlot(i, { groupFilter: g, memberId: null })}
-                  onChangeMember={(id) => updateSlot(i, { memberId: id })}
+                  onChangeGroup={(g) => {
+                    updateSlot(i, { groupFilter: g, memberId: null });
+                    touchGroup(g);
+                  }}
+                  onChangeMember={(id) => {
+                    updateSlot(i, { memberId: id });
+                    const m = members.find((mm) => mm.id === id);
+                    if (m) touchGroup(m.groupName);
+                  }}
                   onRemove={() => removeSlot(i)}
                 />
               ))}
@@ -937,43 +948,93 @@ export default function App() {
   const [selectedEventId, setSelectedEventId] = useState(null);
   const [activeTemplateId, setActiveTemplateId] = useState(null);
   const [activeTemplateContent, setActiveTemplateContent] = useState(DEFAULT_TEMPLATE);
+  const [recentGroups, setRecentGroups] = useState(() => loadLocal("recentGroups", []));
 
-  // メンバーの「編集」専用の更新関数。setMembers(生の状態更新)と違い、呼ばれた時点で
-  // 必ずSupabaseへの保存も行う。読み込み・他端末からの同期(setMembers直呼び出し)では
-  // 保存が走らないようにするための分離。
+  // グループを選ぶ・そのグループのメンバーを選ぶ、のどちらかが起きるたびに「使った順」を更新する
+  const touchGroup = (groupName) => {
+    if (!groupName) return;
+    setRecentGroups((prev) => {
+      const next = [groupName, ...prev.filter((g) => g !== groupName)];
+      saveLocal("recentGroups", next);
+      return next;
+    });
+  };
+
+  // 最新のmembersを非同期コールバックからも参照できるようにしておく（他端末の選択状態を復元する際に使う）
+  const membersRef = useRef([]);
+  useEffect(() => { membersRef.current = members; }, [members]);
+
+  // 「編集」専用の更新関数。生のsetXと違い、呼ばれた時点で必ずSupabaseへの保存も行う。
+  // 読み込み・他端末からの同期(生のsetXを直接呼ぶ場合)では保存が走らないようにするための分離。
+  // これをしないと、読み込みや他端末の変更が「保存」として誤って上書き保存されてしまう。
   const updateMembers = (updater) => {
     setMembers((prev) => {
       const next = typeof updater === "function" ? updater(prev) : updater;
-      saveSharedMembers(next);
+      saveShared("members", next);
       return next;
     });
+  };
+  const updateEvents = (updater) => {
+    setEvents((prev) => {
+      const next = typeof updater === "function" ? updater(prev) : updater;
+      saveShared("events", next);
+      return next;
+    });
+  };
+  const updateTemplates = (updater) => {
+    setTemplates((prev) => {
+      const next = typeof updater === "function" ? updater(prev) : updater;
+      saveShared("templates", next);
+      return next;
+    });
+  };
+  const updateHistory = (updater) => {
+    setHistory((prev) => {
+      const next = typeof updater === "function" ? updater(prev) : updater;
+      saveShared("postHistory", next);
+      return next;
+    });
+  };
+
+  // 選択中の状態（メンバー選択・イベント選択・テンプレート編集内容）を復元する共通処理
+  const applySelection = (sel, templatesForLookup) => {
+    if (!sel) return;
+    const restoredSlots = (sel.memberIds || [])
+      .map((id) => membersRef.current.find((mm) => mm.id === id))
+      .filter(Boolean)
+      .map((mm) => ({ id: uid(), groupFilter: mm.groupName, memberId: mm.id }));
+    setMemberSlots(restoredSlots.length ? restoredSlots : [{ id: uid(), groupFilter: null, memberId: null }]);
+    setSelectedEventId(sel.eventId || null);
+    if (sel.activeTemplateId) setActiveTemplateId(sel.activeTemplateId);
+    if (typeof sel.activeTemplateContent === "string") setActiveTemplateContent(sel.activeTemplateContent);
   };
 
   /* 初回読み込み */
   useEffect(() => {
     (async () => {
-      const m = await loadSharedMembers();
-      const e = loadLocal("events", []);
-      const t = loadLocal("templates", []);
-      const h = loadLocal("postHistory", []);
-      const sel = loadLocal("lastSelection", null);
+      const [m, e, t, h, sel] = await Promise.all([
+        loadShared("members", []),
+        loadShared("events", []),
+        loadShared("templates", []),
+        loadShared("postHistory", []),
+        loadShared("lastSelection", null),
+      ]);
 
       setMembers(m);
+      membersRef.current = m;
       setEvents(e);
-      const finalTemplates = t.length ? t : [{ id: uid(), name: "デフォルト", content: DEFAULT_TEMPLATE }];
+      const isFreshDefault = t.length === 0;
+      const finalTemplates = isFreshDefault ? [{ id: uid(), name: "デフォルト", content: DEFAULT_TEMPLATE }] : t;
       setTemplates(finalTemplates);
+      if (isFreshDefault) saveShared("templates", finalTemplates);
       setHistory(h);
 
       if (sel) {
-        const restoredSlots = (sel.memberIds || [])
-          .map((id) => m.find((mm) => mm.id === id))
-          .filter(Boolean)
-          .map((mm) => ({ id: uid(), groupFilter: mm.groupName, memberId: mm.id }));
-        setMemberSlots(restoredSlots.length ? restoredSlots : [{ id: uid(), groupFilter: null, memberId: null }]);
-        setSelectedEventId(sel.eventId || null);
-        const at = finalTemplates.find((x) => x.id === sel.activeTemplateId);
-        setActiveTemplateId(at ? at.id : finalTemplates[0]?.id ?? null);
-        setActiveTemplateContent(sel.activeTemplateContent ?? finalTemplates[0]?.content ?? DEFAULT_TEMPLATE);
+        applySelection(sel);
+        if (!finalTemplates.find((x) => x.id === sel.activeTemplateId)) {
+          setActiveTemplateId(finalTemplates[0]?.id ?? null);
+          setActiveTemplateContent(finalTemplates[0]?.content ?? DEFAULT_TEMPLATE);
+        }
       } else {
         setActiveTemplateId(finalTemplates[0]?.id ?? null);
         setActiveTemplateContent(finalTemplates[0]?.content ?? DEFAULT_TEMPLATE);
@@ -982,35 +1043,57 @@ export default function App() {
     })();
   }, []);
 
-  /* 他の人がメンバー情報を更新したら、リアルタイムで反映する */
+  /* 他の人が更新したら、リアルタイムで反映する（メンバー・イベント・テンプレート・履歴・選択状態すべて） */
   useEffect(() => {
     if (!supabase) return;
     const channel = supabase
-      .channel("shared_data_members")
+      .channel("shared_data_all")
       .on(
         "postgres_changes",
-        { event: "*", schema: "public", table: "shared_data", filter: "key=eq.members" },
+        { event: "*", schema: "public", table: "shared_data" },
         (payload) => {
-          if (payload.new && payload.new.value) setMembers(payload.new.value);
+          const row = payload.new;
+          if (!row) return;
+          switch (row.key) {
+            case "members":
+              setMembers(row.value || []);
+              break;
+            case "events":
+              setEvents(row.value || []);
+              break;
+            case "templates":
+              setTemplates(row.value && row.value.length ? row.value : [{ id: uid(), name: "デフォルト", content: DEFAULT_TEMPLATE }]);
+              break;
+            case "postHistory":
+              setHistory(row.value || []);
+              break;
+            case "lastSelection":
+              applySelection(row.value);
+              break;
+            default:
+              break;
+          }
         }
       )
       .subscribe();
     return () => { supabase.removeChannel(channel); };
   }, []);
 
-  /* 変更のたびに保存（メンバーは updateMembers 経由の明示的な編集時のみ保存する。
-     読み込み直後や他端末からの同期による変化では保存しない） */
-  useEffect(() => { if (loaded) saveLocal("events", events); }, [events, loaded]);
-  useEffect(() => { if (loaded) saveLocal("templates", templates); }, [templates, loaded]);
-  useEffect(() => { if (loaded) saveLocal("postHistory", history); }, [history, loaded]);
+  /* 選択状態（メンバー選択・イベント選択・テンプレート編集内容）は変更の度に共有保存する。
+     テンプレート編集は1文字ごとに変わるので、少し待ってからまとめて保存する（デバウンス）。 */
+  const selectionSaveTimer = useRef(null);
   useEffect(() => {
     if (!loaded) return;
-    saveLocal("lastSelection", {
-      memberIds: memberSlots.map((s) => s.memberId).filter(Boolean),
-      eventId: selectedEventId,
-      activeTemplateId,
-      activeTemplateContent,
-    });
+    if (selectionSaveTimer.current) clearTimeout(selectionSaveTimer.current);
+    selectionSaveTimer.current = setTimeout(() => {
+      saveShared("lastSelection", {
+        memberIds: memberSlots.map((s) => s.memberId).filter(Boolean),
+        eventId: selectedEventId,
+        activeTemplateId,
+        activeTemplateContent,
+      });
+    }, 600);
+    return () => clearTimeout(selectionSaveTimer.current);
   }, [memberSlots, selectedEventId, activeTemplateId, activeTemplateContent, loaded]);
 
   /* テンプレ用の値（プレースホルダー置換） */
@@ -1030,7 +1113,7 @@ export default function App() {
     "会場": selectedEvent ? selectedEvent.place : "",
     "個人タグ": first?.personalTag ? `#${first.personalTag}` : "",
     "グループタグ": first?.groupTag ? `#${first.groupTag}` : "",
-    "レギュレーション": selectedEvent?.regulation || first?.regulation || "",
+    "レギュレーション": first?.regulation || "",
     "メンバータグ一覧": selectedMembers.map((m) => `#${m.name}`).join("\n"),
     "個人タグ一覧": dedupedNonEmpty(selectedMembers.map((m) => m.personalTag)).map((t) => `#${t}`).join("\n"),
     "グループタグ一覧": dedupedNonEmpty(selectedMembers.map((m) => m.groupTag)).map((t) => `#${t}`).join("\n"),
@@ -1040,7 +1123,7 @@ export default function App() {
   const recordHistory = (text) => {
     if (!text.trim()) return;
     const names = selectedMembers.map((m) => m.name).join("・");
-    setHistory((prev) => [{ id: uid(), date: new Date().toISOString(), text, memberName: names, eventName: selectedEvent?.eventName || "" }, ...prev].slice(0, 100));
+    updateHistory((prev) => [{ id: uid(), date: new Date().toISOString(), text, memberName: names, eventName: selectedEvent?.eventName || "" }, ...prev].slice(0, 100));
   };
 
   /* データのバックアップ（保存領域に頼りきらないための書き出し・読み込み） */
@@ -1078,9 +1161,9 @@ export default function App() {
         const data = JSON.parse(reader.result);
         const nextMembers = Array.isArray(data.members) ? data.members : members;
         if (Array.isArray(data.members)) updateMembers(data.members);
-        if (Array.isArray(data.events)) setEvents(data.events);
-        if (Array.isArray(data.templates) && data.templates.length) setTemplates(data.templates);
-        if (Array.isArray(data.postHistory)) setHistory(data.postHistory);
+        if (Array.isArray(data.events)) updateEvents(data.events);
+        if (Array.isArray(data.templates) && data.templates.length) updateTemplates(data.templates);
+        if (Array.isArray(data.postHistory)) updateHistory(data.postHistory);
 
         if (data.selection) {
           const restoredSlots = (data.selection.memberIds || [])
@@ -1149,16 +1232,18 @@ export default function App() {
             activeTemplateContent={activeTemplateContent}
             setActiveTemplateContent={setActiveTemplateContent}
             values={values}
+            recentGroups={recentGroups}
+            touchGroup={touchGroup}
             onNavigate={setView}
             recordHistory={recordHistory}
           />
         )}
         {view === "members" && <MembersPage members={members} setMembers={updateMembers} onBack={() => setView("home")} />}
-        {view === "events" && <EventsPage events={events} setEvents={setEvents} onBack={() => setView("home")} />}
+        {view === "events" && <EventsPage events={events} setEvents={updateEvents} onBack={() => setView("home")} />}
         {view === "templates" && (
           <TemplatesPage
             templates={templates}
-            setTemplates={setTemplates}
+            setTemplates={updateTemplates}
             activeId={activeTemplateId}
             setActiveId={setActiveTemplateId}
             content={activeTemplateContent}
@@ -1167,7 +1252,7 @@ export default function App() {
             onBack={() => setView("home")}
           />
         )}
-        {view === "history" && <HistoryPage history={history} setHistory={setHistory} onBack={() => setView("home")} />}
+        {view === "history" && <HistoryPage history={history} setHistory={updateHistory} onBack={() => setView("home")} />}
       </div>
     </div>
   );
