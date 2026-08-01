@@ -983,25 +983,14 @@ export default function App() {
     });
   };
 
-  const lastRemoteSelectionRef = useRef(null);
-
-  // 選択中の状態（メンバー選択・イベント選択・テンプレート編集内容）を復元する共通処理
-  // 他端末からの反映で「今まさに選ぼうとしている空の枠」を消してしまわないよう、
-  // ローカルの空枠（まだ誰も選んでいないスロット）は残したまま合成する。
+  // 選択中の状態（メンバー選択・イベント選択・テンプレート編集内容）を、起動時に一度だけ復元する
   const applySelection = (sel) => {
     if (!sel) return;
-    lastRemoteSelectionRef.current = JSON.stringify(sel);
     const restoredSlots = (sel.memberIds || [])
       .map((id) => membersRef.current.find((mm) => mm.id === id))
       .filter(Boolean)
       .map((mm) => ({ id: uid(), groupFilter: mm.groupName, memberId: mm.id }));
-    setMemberSlots((prevSlots) => {
-      const localEmptySlots = prevSlots.filter((s) => !s.memberId);
-      const merged = restoredSlots.length
-        ? [...restoredSlots, ...localEmptySlots]
-        : (localEmptySlots.length ? localEmptySlots : [{ id: uid(), groupFilter: null, memberId: null }]);
-      return merged.slice(0, MAX_MEMBER_SLOTS);
-    });
+    setMemberSlots(restoredSlots.length ? restoredSlots : [{ id: uid(), groupFilter: null, memberId: null }]);
     setSelectedEventId(sel.eventId || null);
     if (sel.activeTemplateId) setActiveTemplateId(sel.activeTemplateId);
     if (typeof sel.activeTemplateContent === "string") setActiveTemplateContent(sel.activeTemplateContent);
@@ -1065,9 +1054,9 @@ export default function App() {
             case "postHistory":
               setHistory(row.value || []);
               break;
-            case "lastSelection":
-              applySelection(row.value);
-              break;
+            // lastSelection（プレビュー・選択中の状態）はあえてリアルタイム反映しない。
+            // 開いている最中に他端末の選択で巻き戻ってしまうのを避けるため、
+            // 次にページを開いた時（初回読み込み時）にだけ反映する。
             default:
               break;
           }
@@ -1089,11 +1078,8 @@ export default function App() {
       activeTemplateId,
       activeTemplateContent,
     };
-    const serialized = JSON.stringify(payload);
-    if (serialized === lastRemoteSelectionRef.current) return;
     if (selectionSaveTimer.current) clearTimeout(selectionSaveTimer.current);
     selectionSaveTimer.current = setTimeout(() => {
-      lastRemoteSelectionRef.current = serialized;
       saveShared("lastSelection", payload);
     }, 600);
     return () => clearTimeout(selectionSaveTimer.current);
