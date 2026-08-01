@@ -364,13 +364,27 @@ function MemberForm({ initial, onCancel, onSave, onDelete }) {
 // OCRで読み取った文字の中から「名前」「Xアカウント」らしき行を推測する（あくまで下書き用の目安）
 function guessFromOcrText(text) {
   const lines = text.split("\n").map((l) => l.trim()).filter(Boolean);
-  const accountLine = lines.find((l) => /@[A-Za-z0-9_]{2,}/.test(l));
-  const account = accountLine ? (accountLine.match(/@[A-Za-z0-9_]{2,}/) || [""])[0] : "";
-  const accountIndex = accountLine ? lines.indexOf(accountLine) : -1;
-  const candidateLines = accountIndex > 0 ? lines.slice(0, accountIndex) : lines.slice(0, 3);
-  const name = candidateLines
-    .filter((l) => !l.includes("@") && l.length <= 20)
-    .sort((a, b) => b.length - a.length)[0] || "";
+  const accountLineIndex = lines.findIndex((l) => /@[A-Za-z0-9_]{2,}/.test(l));
+
+  let account = "";
+  if (accountLineIndex !== -1) {
+    const match = lines[accountLineIndex].match(/@([A-Za-z0-9_]{2,})/);
+    account = match ? match[1] : ""; // 先頭の@は含めない
+  }
+
+  // 名前は「アカウント行のすぐ上の行」を最優先で採用する
+  let name = "";
+  if (accountLineIndex > 0) {
+    const prevLine = lines[accountLineIndex - 1];
+    if (prevLine && !prevLine.includes("@")) {
+      name = prevLine;
+    }
+  }
+  if (!name) {
+    const candidateLines = accountLineIndex > 0 ? lines.slice(0, accountLineIndex) : lines.slice(0, 3);
+    name = candidateLines.filter((l) => !l.includes("@") && l.length <= 30).sort((a, b) => b.length - a.length)[0] || "";
+  }
+
   return { name, account };
 }
 
