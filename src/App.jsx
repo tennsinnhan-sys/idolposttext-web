@@ -361,6 +361,32 @@ function MembersPage({ members, setMembers, groupRegulations, setGroupRegulation
   const [openGroup, setOpenGroup] = useState(null);
   const [editing, setEditing] = useState(null); // 'new' | member | null
 
+  // 撮影レギュレーションは入力のたびに即保存すると同期が追いつかないので、
+  // 入力中はローカルの下書きだけを更新し、少し待ってからまとめて保存する
+  const [regulationDraft, setRegulationDraft] = useState("");
+  const regulationSaveTimer = useRef(null);
+
+  const openGroupPanel = (g) => {
+    if (regulationSaveTimer.current) {
+      clearTimeout(regulationSaveTimer.current);
+      regulationSaveTimer.current = null;
+      if (openGroup) {
+        setGroupRegulations((prev) => ({ ...prev, [openGroup]: regulationDraft }));
+      }
+    }
+    const next = openGroup === g ? null : g;
+    setOpenGroup(next);
+    setRegulationDraft(next ? (groupRegulations[next] || "") : "");
+  };
+
+  const changeRegulationDraft = (g, value) => {
+    setRegulationDraft(value);
+    if (regulationSaveTimer.current) clearTimeout(regulationSaveTimer.current);
+    regulationSaveTimer.current = setTimeout(() => {
+      setGroupRegulations((prev) => ({ ...prev, [g]: value }));
+    }, 500);
+  };
+
   const groups = useMemo(() => dedupedNonEmpty(members.map((m) => m.groupName)).sort(), [members]);
 
   const saveMember = (m) => {
@@ -437,7 +463,7 @@ function MembersPage({ members, setMembers, groupRegulations, setGroupRegulation
       <div className="space-y-3">
         {groups.map((g) => (
           <Card key={g}>
-            <button className="w-full flex items-center justify-between" onClick={() => setOpenGroup(openGroup === g ? null : g)}>
+            <button className="w-full flex items-center justify-between" onClick={() => openGroupPanel(g)}>
               <span className="font-bold text-gray-800">{g}</span>
               <span className="flex items-center gap-2 text-xs text-gray-400">
                 {members.filter((m) => m.groupName === g).length}人
@@ -447,8 +473,8 @@ function MembersPage({ members, setMembers, groupRegulations, setGroupRegulation
             {openGroup === g && (
               <div className="mt-3 space-y-3">
                 <TextInput
-                  value={groupRegulations[g] || ""}
-                  onChange={(v) => setGroupRegulations((prev) => ({ ...prev, [g]: v }))}
+                  value={regulationDraft}
+                  onChange={(v) => changeRegulationDraft(g, v)}
                   placeholder="撮影レギュレーション（撮影可能 など・グループ共通）"
                 />
                 <div className="space-y-2">
@@ -1068,9 +1094,9 @@ export default function App() {
             case "postHistory":
               setHistory(row.value || []);
               break;
-            case "groupRegulations":
-              setGroupRegulationsRaw(row.value || {});
-              break;
+            // groupRegulations（撮影レギュレーション）も、入力中に他端末の反映で
+            // 文字が消えたり戻ったりしてしまうのを避けるため、リアルタイム反映はしない。
+            // 次にページを開いた時（初回読み込み時）にだけ反映する。
             // lastSelection（プレビュー・選択中の状態）はあえてリアルタイム反映しない。
             // 開いている最中に他端末の選択で巻き戻ってしまうのを避けるため、
             // 次にページを開いた時（初回読み込み時）にだけ反映する。
