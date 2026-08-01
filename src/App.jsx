@@ -251,7 +251,6 @@ function BulkMemberForm({ onCancel, onSave }) {
           name: parts[2] || "",
           account: parts[3] || "",
           personalTag: parts[4] || "",
-          regulation: parts[5] || "",
         };
       })
       .filter((p) => p.groupName.length > 0 && p.name.length > 0);
@@ -266,7 +265,6 @@ function BulkMemberForm({ onCancel, onSave }) {
       account: p.account,
       personalTag: p.personalTag,
       groupTag: p.groupTag,
-      regulation: p.regulation,
       iconColorName: COLORS[i % COLORS.length].key,
       iconSymbol: "star",
     }));
@@ -281,14 +279,14 @@ function BulkMemberForm({ onCancel, onSave }) {
             1行に1人ずつ、以下の形式で貼り付けてください（グループ名と名前は必須、それ以外は空欄でも可）
           </p>
           <p className="text-[11px] text-indigo-500 font-mono mb-1.5">
-            グループ名,グループタグ,名前,Xアカウント,個人タグ,撮影レギュレーション
+            グループ名,グループタグ,名前,Xアカウント,個人タグ
           </p>
           <textarea
             value={raw}
             onChange={(e) => setRaw(e.target.value)}
             rows={9}
             placeholder={
-              "ファーストプレイリスト,FP,羽月あい,@example1,あいたぐ,撮影可能\n" +
+              "ファーストプレイリスト,FP,羽月あい,@example1,あいたぐ\n" +
               "ファーストプレイリスト,FP,宮脇はる,@example2,はるたぐ\n" +
               "STAiNY,STAiNY,浜辺千夢,@example3"
             }
@@ -320,7 +318,7 @@ function BulkMemberForm({ onCancel, onSave }) {
 
 
 function emptyMember(groupName = "") {
-  return { id: uid(), groupName, name: "", account: "", personalTag: "", groupTag: "", regulation: "", iconColorName: "blue", iconSymbol: "star" };
+  return { id: uid(), groupName, name: "", account: "", personalTag: "", groupTag: "", iconColorName: "blue", iconSymbol: "star" };
 }
 
 function MemberForm({ initial, onCancel, onSave, onDelete }) {
@@ -335,7 +333,6 @@ function MemberForm({ initial, onCancel, onSave, onDelete }) {
         <TextInput value={m.account} onChange={set("account")} placeholder="Xアカウント" />
         <TextInput value={m.personalTag} onChange={set("personalTag")} placeholder="個人タグ" />
         <TextInput value={m.groupTag} onChange={set("groupTag")} placeholder="グループタグ" />
-        <TextInput value={m.regulation} onChange={set("regulation")} placeholder="レギュレーション（撮影可能 など）" />
         <IconPicker
           colorKey={m.iconColorName}
           symbolKey={m.iconSymbol}
@@ -360,7 +357,7 @@ function MemberForm({ initial, onCancel, onSave, onDelete }) {
 /* メンバー管理ページ                                                    */
 /* ------------------------------------------------------------------ */
 
-function MembersPage({ members, setMembers, onBack }) {
+function MembersPage({ members, setMembers, groupRegulations, setGroupRegulations, onBack }) {
   const [openGroup, setOpenGroup] = useState(null);
   const [editing, setEditing] = useState(null); // 'new' | member | null
 
@@ -448,8 +445,14 @@ function MembersPage({ members, setMembers, onBack }) {
               </span>
             </button>
             {openGroup === g && (
-              <div className="mt-3 space-y-2">
-                {members.filter((m) => m.groupName === g).map((m, i, arr) => (
+              <div className="mt-3 space-y-3">
+                <TextInput
+                  value={groupRegulations[g] || ""}
+                  onChange={(v) => setGroupRegulations((prev) => ({ ...prev, [g]: v }))}
+                  placeholder="撮影レギュレーション（撮影可能 など・グループ共通）"
+                />
+                <div className="space-y-2">
+                  {members.filter((m) => m.groupName === g).map((m, i, arr) => (
                   <div key={m.id} className="flex items-center gap-2 bg-violet-50 rounded-2xl px-3 py-2">
                     <IconBadge colorKey={m.iconColorName} symbolKey={m.iconSymbol} size={30} />
                     <div className="flex-1 min-w-0">
@@ -464,7 +467,8 @@ function MembersPage({ members, setMembers, onBack }) {
                     </button>
                     <button onClick={() => setEditing(m)} className="p-1.5 text-indigo-500"><Pencil size={15} /></button>
                   </div>
-                ))}
+                  ))}
+                </div>
                 <SoftButton tone="lavender" onClick={() => { setEditing("new"); }} className="w-full">
                   <Plus size={14} className="inline -mt-0.5 mr-1" />{g}に追加
                 </SoftButton>
@@ -930,6 +934,7 @@ export default function App() {
   const [events, setEvents] = useState([]);
   const [templates, setTemplates] = useState([]);
   const [history, setHistory] = useState([]);
+  const [groupRegulations, setGroupRegulationsRaw] = useState({});
 
   const [memberSlots, setMemberSlots] = useState([{ id: uid(), groupFilter: null, memberId: null }]);
   const [selectedEventId, setSelectedEventId] = useState(null);
@@ -982,6 +987,13 @@ export default function App() {
       return next;
     });
   };
+  const setGroupRegulations = (updater) => {
+    setGroupRegulationsRaw((prev) => {
+      const next = typeof updater === "function" ? updater(prev) : updater;
+      saveShared("groupRegulations", next);
+      return next;
+    });
+  };
 
   // 選択中の状態（メンバー選択・イベント選択・テンプレート編集内容）を、起動時に一度だけ復元する
   const applySelection = (sel) => {
@@ -999,12 +1011,13 @@ export default function App() {
   /* 初回読み込み */
   useEffect(() => {
     (async () => {
-      const [m, e, t, h, sel] = await Promise.all([
+      const [m, e, t, h, sel, gr] = await Promise.all([
         loadShared("members", []),
         loadShared("events", []),
         loadShared("templates", []),
         loadShared("postHistory", []),
         loadShared("lastSelection", null),
+        loadShared("groupRegulations", {}),
       ]);
 
       setMembers(m);
@@ -1015,6 +1028,7 @@ export default function App() {
       setTemplates(finalTemplates);
       if (isFreshDefault) saveShared("templates", finalTemplates);
       setHistory(h);
+      setGroupRegulationsRaw(gr || {});
 
       if (sel) {
         applySelection(sel);
@@ -1053,6 +1067,9 @@ export default function App() {
               break;
             case "postHistory":
               setHistory(row.value || []);
+              break;
+            case "groupRegulations":
+              setGroupRegulationsRaw(row.value || {});
               break;
             // lastSelection（プレビュー・選択中の状態）はあえてリアルタイム反映しない。
             // 開いている最中に他端末の選択で巻き戻ってしまうのを避けるため、
@@ -1102,7 +1119,7 @@ export default function App() {
     "会場": selectedEvent ? selectedEvent.place : "",
     "個人タグ": first?.personalTag ? `#${first.personalTag}` : "",
     "グループタグ": first?.groupTag ? `#${first.groupTag}` : "",
-    "レギュレーション": first?.regulation || "",
+    "レギュレーション": (first && groupRegulations[first.groupName]) || "",
     "メンバータグ一覧": selectedMembers.map((m) => `#${m.name}`).join("\n"),
     "個人タグ一覧": dedupedNonEmpty(selectedMembers.map((m) => m.personalTag)).map((t) => `#${t}`).join("\n"),
     "グループタグ一覧": dedupedNonEmpty(selectedMembers.map((m) => m.groupTag)).map((t) => `#${t}`).join("\n"),
@@ -1227,7 +1244,15 @@ export default function App() {
             recordHistory={recordHistory}
           />
         )}
-        {view === "members" && <MembersPage members={members} setMembers={updateMembers} onBack={() => setView("home")} />}
+        {view === "members" && (
+          <MembersPage
+            members={members}
+            setMembers={updateMembers}
+            groupRegulations={groupRegulations}
+            setGroupRegulations={setGroupRegulations}
+            onBack={() => setView("home")}
+          />
+        )}
         {view === "events" && <EventsPage events={events} setEvents={updateEvents} onBack={() => setView("home")} />}
         {view === "templates" && (
           <TemplatesPage
