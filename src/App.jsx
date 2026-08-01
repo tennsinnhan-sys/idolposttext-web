@@ -950,38 +950,9 @@ function HomePage({ members, events, memberSlots, setMemberSlots, selectedEventI
   const selectedEvent = events.find((e) => e.id === selectedEventId);
   const [openEvent, setOpenEvent] = useState(false);
   const [copyFlash, setCopyFlash] = useState(false);
-  const [photos, setPhotos] = useState([]);
-  const [photoUrls, setPhotoUrls] = useState([]);
 
   const text = useMemo(() => buildText(activeTemplateContent, values), [activeTemplateContent, values]);
   const overLimit = text.length > CHAR_LIMIT;
-
-  const canShareFiles = typeof navigator !== "undefined" && !!navigator.canShare;
-
-  const onPickPhotos = (e) => {
-    const files = Array.from(e.target.files || []);
-    photoUrls.forEach((u) => URL.revokeObjectURL(u));
-    setPhotos(files);
-    setPhotoUrls(files.map((f) => URL.createObjectURL(f)));
-  };
-  const removePhoto = (index) => {
-    URL.revokeObjectURL(photoUrls[index]);
-    setPhotos((prev) => prev.filter((_, i) => i !== index));
-    setPhotoUrls((prev) => prev.filter((_, i) => i !== index));
-  };
-  useEffect(() => () => photoUrls.forEach((u) => URL.revokeObjectURL(u)), []);
-
-  const doShare = async () => {
-    recordHistory(text);
-    if (photos.length && navigator.share && navigator.canShare && navigator.canShare({ files: photos })) {
-      try { await navigator.share({ files: photos, text }); } catch { /* ユーザーがキャンセルした場合など */ }
-      return;
-    }
-    if (navigator.share) {
-      try { await navigator.share({ text }); return; } catch { /* noop */ }
-    }
-    doPost();
-  };
 
   const updateSlot = (index, patch) => {
     setMemberSlots((prev) => prev.map((s, i) => (i === index ? { ...s, ...patch } : s)));
@@ -1107,41 +1078,14 @@ function HomePage({ members, events, memberSlots, setMemberSlots, selectedEventI
           {text.length} / {CHAR_LIMIT}文字（{overLimit ? `${text.length - CHAR_LIMIT}文字オーバー` : `あと${CHAR_LIMIT - text.length}文字`}）
         </p>
 
-        <label className="flex items-center gap-2 text-xs font-bold text-indigo-500 mb-2 cursor-pointer w-fit">
-          <Camera size={15} aria-hidden="true" />
-          写真を選ぶ{photos.length > 0 ? `（${photos.length}枚）` : ""}
-          <input type="file" accept="image/*" multiple onChange={onPickPhotos} className="hidden" />
-        </label>
-        {photoUrls.length > 0 && (
-          <div className="flex gap-2 mb-3 flex-wrap">
-            {photoUrls.map((url, i) => (
-              <div key={url} className="relative">
-                <img src={url} alt="" className="w-14 h-14 object-cover rounded-xl" />
-                <button onClick={() => removePhoto(i)} className="absolute -top-1.5 -right-1.5 bg-white rounded-full shadow text-gray-400">
-                  <X size={14} />
-                </button>
-              </div>
-            ))}
-          </div>
-        )}
-
         <div className="space-y-2">
           <SoftButton tone="indigo" onClick={doCopy} className="w-full">
             <Copy size={15} className="inline -mt-0.5 mr-1.5" />{copyFlash ? "コピーしました！" : "コピー"}
           </SoftButton>
-          {canShareFiles ? (
-            <SoftButton tone="indigo" onClick={doShare} className="w-full">
-              <Send size={15} className="inline -mt-0.5 mr-1.5" />{photos.length > 0 ? "写真と文章を共有" : "共有"}
-            </SoftButton>
-          ) : (
-            <SoftButton tone="indigo" onClick={doPost} className="w-full">
-              <Send size={15} className="inline -mt-0.5 mr-1.5" />Xで投稿
-            </SoftButton>
-          )}
+          <SoftButton tone="indigo" onClick={doPost} className="w-full">
+            <Send size={15} className="inline -mt-0.5 mr-1.5" />Xで投稿
+          </SoftButton>
         </div>
-        {!canShareFiles && (
-          <p className="text-[11px] text-gray-400 mt-2">※ 写真の共有はスマホのブラウザでのみ使えます（PCでは文章のみ投稿されます）</p>
-        )}
       </Card>
     </div>
   );
