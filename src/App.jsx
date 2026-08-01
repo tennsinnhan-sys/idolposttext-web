@@ -235,9 +235,7 @@ function IconPicker({ colorKey, symbolKey, onChangeColor, onChangeSymbol }) {
 /* メンバー一括登録フォーム                                              */
 /* ------------------------------------------------------------------ */
 
-function BulkMemberForm({ defaultGroupName, onCancel, onSave }) {
-  const [groupName, setGroupName] = useState(defaultGroupName || "");
-  const [groupTag, setGroupTag] = useState("");
+function BulkMemberForm({ onCancel, onSave }) {
   const [raw, setRaw] = useState("");
 
   const parsed = useMemo(() => {
@@ -247,21 +245,28 @@ function BulkMemberForm({ defaultGroupName, onCancel, onSave }) {
       .filter((line) => line.length > 0)
       .map((line) => {
         const parts = line.split(/[,、\t]/).map((p) => p.trim());
-        return { name: parts[0] || "", account: parts[1] || "", personalTag: parts[2] || "" };
+        return {
+          groupName: parts[0] || "",
+          groupTag: parts[1] || "",
+          name: parts[2] || "",
+          account: parts[3] || "",
+          personalTag: parts[4] || "",
+          regulation: parts[5] || "",
+        };
       })
-      .filter((p) => p.name.length > 0);
+      .filter((p) => p.groupName.length > 0 && p.name.length > 0);
   }, [raw]);
 
   const submit = () => {
-    if (!groupName.trim() || parsed.length === 0) return;
+    if (parsed.length === 0) return;
     const newMembers = parsed.map((p, i) => ({
       id: uid(),
-      groupName: groupName.trim(),
+      groupName: p.groupName,
       name: p.name,
       account: p.account,
       personalTag: p.personalTag,
-      groupTag: groupTag.trim(),
-      regulation: "",
+      groupTag: p.groupTag,
+      regulation: p.regulation,
       iconColorName: COLORS[i % COLORS.length].key,
       iconSymbol: "star",
     }));
@@ -271,17 +276,22 @@ function BulkMemberForm({ defaultGroupName, onCancel, onSave }) {
   return (
     <Card>
       <div className="space-y-3">
-        <TextInput value={groupName} onChange={setGroupName} placeholder="グループ名（一括登録する全員に適用）" />
-        <TextInput value={groupTag} onChange={setGroupTag} placeholder="グループタグ（任意・全員共通）" />
         <div>
           <p className="text-xs text-gray-400 mb-1.5">
-            1行に1人ずつ「名前,Xアカウント,個人タグ」の形式で貼り付けてください（アカウント・個人タグは省略可）
+            1行に1人ずつ、以下の形式で貼り付けてください（グループ名と名前は必須、それ以外は空欄でも可）
+          </p>
+          <p className="text-[11px] text-indigo-500 font-mono mb-1.5">
+            グループ名,グループタグ,名前,Xアカウント,個人タグ,撮影レギュレーション
           </p>
           <textarea
             value={raw}
             onChange={(e) => setRaw(e.target.value)}
-            rows={8}
-            placeholder={"羽月あい,@example1\n宮脇はる,@example2\n蒼井咲来,@example3,さくちゃーじ"}
+            rows={9}
+            placeholder={
+              "ファーストプレイリスト,FP,羽月あい,@example1,あいたぐ,撮影可能\n" +
+              "ファーストプレイリスト,FP,宮脇はる,@example2,はるたぐ\n" +
+              "STAiNY,STAiNY,浜辺千夢,@example3"
+            }
             className="w-full rounded-2xl bg-violet-50 focus:bg-white focus:ring-2 ring-indigo-300 outline-none p-3 text-sm text-gray-800 font-mono"
           />
         </div>
@@ -290,14 +300,16 @@ function BulkMemberForm({ defaultGroupName, onCancel, onSave }) {
             <p className="text-xs font-bold text-indigo-600 mb-1.5">{parsed.length}人を登録します</p>
             <div className="flex flex-wrap gap-1.5">
               {parsed.map((p, i) => (
-                <span key={i} className="text-[11px] bg-white rounded-full px-2 py-1 text-gray-600">{p.name}</span>
+                <span key={i} className="text-[11px] bg-white rounded-full px-2 py-1 text-gray-600">
+                  {p.name}<span className="text-gray-400">（{p.groupName}）</span>
+                </span>
               ))}
             </div>
           </div>
         )}
       </div>
       <div className="flex gap-2 mt-5">
-        <SoftButton tone="indigo" onClick={submit} disabled={!groupName.trim() || parsed.length === 0}>
+        <SoftButton tone="indigo" onClick={submit} disabled={parsed.length === 0}>
           {parsed.length > 0 ? `${parsed.length}人を登録` : "登録"}
         </SoftButton>
         <SoftButton tone="ghost" onClick={onCancel}>キャンセル</SoftButton>
@@ -383,7 +395,6 @@ function MembersPage({ members, setMembers, onBack }) {
       <div>
         <TopBar title="メンバー一括登録" onBack={() => setEditing(null)} />
         <BulkMemberForm
-          defaultGroupName={openGroup || ""}
           onCancel={() => setEditing(null)}
           onSave={(newMembers) => {
             setMembers((prev) => [...prev, ...newMembers]);
