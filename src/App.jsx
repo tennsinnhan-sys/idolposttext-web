@@ -450,6 +450,7 @@ function MembersPage({ members, setMembers, groupRegulations, setGroupRegulation
   // 入力中はローカルの下書きだけを更新し、少し待ってからまとめて保存する
   const [regulationDraft, setRegulationDraft] = useState("");
   const regulationSaveTimer = useRef(null);
+  const [carryAccount, setCarryAccount] = useState(false);
 
   const openGroupPanel = (g) => {
     if (regulationSaveTimer.current) {
@@ -497,6 +498,28 @@ function MembersPage({ members, setMembers, groupRegulations, setGroupRegulation
       const b = indices[j];
       [next[a], next[b]] = [next[b], next[a]];
       return next;
+    });
+  };
+
+  // そのグループで一番よく使われているグループタグを推定する（表記ゆれがあっても多数派を採用）
+  const mostCommonGroupTag = (groupName) => {
+    const tags = members.filter((m) => m.groupName === groupName && m.groupTag).map((m) => m.groupTag);
+    if (!tags.length) return "";
+    const counts = {};
+    tags.forEach((t) => { counts[t] = (counts[t] || 0) + 1; });
+    return Object.entries(counts).sort((a, b) => b[1] - a[1])[0][0];
+  };
+
+  // 「{グループ}に追加」：グループタグは常に引き継ぎ、Xアカウントはチェックボックスの設定に応じて
+  // 直近のメンバーのものを引き継ぐ（名前・個人タグは毎回まっさらにする）
+  const addToGroup = (g) => {
+    const groupMembers = members.filter((m) => m.groupName === g);
+    const lastMember = groupMembers[groupMembers.length - 1];
+    setEditing({
+      ...emptyMember(g),
+      groupTag: mostCommonGroupTag(g),
+      account: carryAccount && lastMember ? lastMember.account : "",
+      __new: true,
     });
   };
 
@@ -600,7 +623,11 @@ function MembersPage({ members, setMembers, groupRegulations, setGroupRegulation
                   </div>
                   ))}
                 </div>
-                <SoftButton tone="lavender" onClick={() => { setEditing("new"); }} className="w-full">
+                <label className="flex items-center gap-1.5 text-xs text-gray-500">
+                  <input type="checkbox" checked={carryAccount} onChange={(e) => setCarryAccount(e.target.checked)} />
+                  Xアカウントも引き継ぐ
+                </label>
+                <SoftButton tone="lavender" onClick={() => addToGroup(g)} className="w-full">
                   <Plus size={14} className="inline -mt-0.5 mr-1" />{g}に追加
                 </SoftButton>
               </div>
