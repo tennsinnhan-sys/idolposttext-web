@@ -927,6 +927,17 @@ export default function App() {
   const [activeTemplateId, setActiveTemplateId] = useState(null);
   const [activeTemplateContent, setActiveTemplateContent] = useState(DEFAULT_TEMPLATE);
 
+  // メンバーの「編集」専用の更新関数。setMembers(生の状態更新)と違い、呼ばれた時点で
+  // 必ずSupabaseへの保存も行う。読み込み・他端末からの同期(setMembers直呼び出し)では
+  // 保存が走らないようにするための分離。
+  const updateMembers = (updater) => {
+    setMembers((prev) => {
+      const next = typeof updater === "function" ? updater(prev) : updater;
+      saveSharedMembers(next);
+      return next;
+    });
+  };
+
   /* 初回読み込み */
   useEffect(() => {
     (async () => {
@@ -976,8 +987,8 @@ export default function App() {
     return () => { supabase.removeChannel(channel); };
   }, []);
 
-  /* 変更のたびに保存 */
-  useEffect(() => { if (loaded) saveSharedMembers(members); }, [members, loaded]);
+  /* 変更のたびに保存（メンバーは updateMembers 経由の明示的な編集時のみ保存する。
+     読み込み直後や他端末からの同期による変化では保存しない） */
   useEffect(() => { if (loaded) saveLocal("events", events); }, [events, loaded]);
   useEffect(() => { if (loaded) saveLocal("templates", templates); }, [templates, loaded]);
   useEffect(() => { if (loaded) saveLocal("postHistory", history); }, [history, loaded]);
@@ -1055,7 +1066,7 @@ export default function App() {
       try {
         const data = JSON.parse(reader.result);
         const nextMembers = Array.isArray(data.members) ? data.members : members;
-        if (Array.isArray(data.members)) setMembers(data.members);
+        if (Array.isArray(data.members)) updateMembers(data.members);
         if (Array.isArray(data.events)) setEvents(data.events);
         if (Array.isArray(data.templates) && data.templates.length) setTemplates(data.templates);
         if (Array.isArray(data.postHistory)) setHistory(data.postHistory);
@@ -1131,7 +1142,7 @@ export default function App() {
             recordHistory={recordHistory}
           />
         )}
-        {view === "members" && <MembersPage members={members} setMembers={setMembers} onBack={() => setView("home")} />}
+        {view === "members" && <MembersPage members={members} setMembers={updateMembers} onBack={() => setView("home")} />}
         {view === "events" && <EventsPage events={events} setEvents={setEvents} onBack={() => setView("home")} />}
         {view === "templates" && (
           <TemplatesPage
