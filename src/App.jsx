@@ -905,30 +905,36 @@ function MemberSlotRow({ slot, members, groupNames, onChangeGroup, onChangeMembe
 
   return (
     <div className="flex items-center gap-2 border-l-2 border-dashed border-indigo-200 pl-3 py-1">
-      <select
-        value={slot.groupFilter || ""}
-        onChange={(e) => onChangeGroup(e.target.value || null)}
-        className="text-sm text-indigo-600 font-bold bg-transparent border-none outline-none max-w-[110px]"
-      >
-        <option value="">グループ</option>
-        {groupNames.map((g) => (
-          <option key={g} value={g}>{g}</option>
-        ))}
-      </select>
+      <div className="relative">
+        <select
+          value={slot.groupFilter || ""}
+          onChange={(e) => onChangeGroup(e.target.value || null)}
+          className="appearance-none text-sm text-indigo-600 font-bold bg-transparent border-none outline-none max-w-[120px] truncate pr-4"
+        >
+          <option value="">グループ</option>
+          {groupNames.map((g) => (
+            <option key={g} value={g}>{g}</option>
+          ))}
+        </select>
+        <ChevronDown size={12} className="pointer-events-none absolute right-0 top-1/2 -translate-y-1/2 text-indigo-400" />
+      </div>
 
       {slot.groupFilter && (
         <div className="flex items-center gap-1">
           {current && <IconBadge colorKey={current.iconColorName} symbolKey={current.iconSymbol} size={18} />}
-          <select
-            value={slot.memberId || ""}
-            onChange={(e) => onChangeMember(e.target.value || null)}
-            className="text-sm text-indigo-600 font-bold bg-transparent border-none outline-none max-w-[110px]"
-          >
-            <option value="">選択なし</option>
-            {groupMembers.map((m) => (
-              <option key={m.id} value={m.id}>{m.name}</option>
-            ))}
-          </select>
+          <div className="relative">
+            <select
+              value={slot.memberId || ""}
+              onChange={(e) => onChangeMember(e.target.value || null)}
+              className="appearance-none text-sm text-indigo-600 font-bold bg-transparent border-none outline-none max-w-[110px] truncate pr-4"
+            >
+              <option value="">選択なし</option>
+              {groupMembers.map((m) => (
+                <option key={m.id} value={m.id}>{m.name}</option>
+              ))}
+            </select>
+            <ChevronDown size={12} className="pointer-events-none absolute right-0 top-1/2 -translate-y-1/2 text-indigo-400" />
+          </div>
         </div>
       )}
 
