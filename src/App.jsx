@@ -733,7 +733,6 @@ function HistoryPage({ history, setHistory, onBack }) {
 /* ------------------------------------------------------------------ */
 
 function MemberSlotRow({ slot, members, groupNames, onChangeGroup, onChangeMember, onRemove, removable }) {
-  const [openMember, setOpenMember] = useState(false);
   const current = members.find((m) => m.id === slot.memberId);
   const groupMembers = members.filter((m) => m.groupName === slot.groupFilter);
 
@@ -751,26 +750,18 @@ function MemberSlotRow({ slot, members, groupNames, onChangeGroup, onChangeMembe
       </select>
 
       {slot.groupFilter && (
-        <div className="relative">
-          <button onClick={() => setOpenMember((v) => !v)} className="text-sm text-indigo-600 font-bold whitespace-nowrap flex items-center gap-1">
-            {current ? (
-              <>
-                <IconBadge colorKey={current.iconColorName} symbolKey={current.iconSymbol} size={18} />
-                {current.name}
-              </>
-            ) : "選択なし"}
-            <ChevronDown size={12} />
-          </button>
-          {openMember && (
-            <div className="absolute z-10 mt-1 bg-white rounded-2xl shadow-lg py-1.5 min-w-[160px] max-h-56 overflow-auto">
-              <button className="block w-full text-left px-3 py-1.5 text-sm text-gray-400" onClick={() => { onChangeMember(null); setOpenMember(false); }}>選択なし</button>
-              {groupMembers.map((m) => (
-                <button key={m.id} className="w-full flex items-center gap-2 text-left px-3 py-1.5 text-sm text-gray-800" onClick={() => { onChangeMember(m.id); setOpenMember(false); }}>
-                  <IconBadge colorKey={m.iconColorName} symbolKey={m.iconSymbol} size={18} />{m.name}
-                </button>
-              ))}
-            </div>
-          )}
+        <div className="flex items-center gap-1">
+          {current && <IconBadge colorKey={current.iconColorName} symbolKey={current.iconSymbol} size={18} />}
+          <select
+            value={slot.memberId || ""}
+            onChange={(e) => onChangeMember(e.target.value || null)}
+            className="text-sm text-indigo-600 font-bold bg-transparent border-none outline-none max-w-[110px]"
+          >
+            <option value="">選択なし</option>
+            {groupMembers.map((m) => (
+              <option key={m.id} value={m.id}>{m.name}</option>
+            ))}
+          </select>
         </div>
       )}
 
@@ -992,14 +983,25 @@ export default function App() {
     });
   };
 
+  const lastRemoteSelectionRef = useRef(null);
+
   // 選択中の状態（メンバー選択・イベント選択・テンプレート編集内容）を復元する共通処理
-  const applySelection = (sel, templatesForLookup) => {
+  // 他端末からの反映で「今まさに選ぼうとしている空の枠」を消してしまわないよう、
+  // ローカルの空枠（まだ誰も選んでいないスロット）は残したまま合成する。
+  const applySelection = (sel) => {
     if (!sel) return;
+    lastRemoteSelectionRef.current = JSON.stringify(sel);
     const restoredSlots = (sel.memberIds || [])
       .map((id) => membersRef.current.find((mm) => mm.id === id))
       .filter(Boolean)
       .map((mm) => ({ id: uid(), groupFilter: mm.groupName, memberId: mm.id }));
-    setMemberSlots(restoredSlots.length ? restoredSlots : [{ id: uid(), groupFilter: null, memberId: null }]);
+    setMemberSlots((prevSlots) => {
+      const localEmptySlots = prevSlots.filter((s) => !s.memberId);
+      const merged = restoredSlots.length
+        ? [...restoredSlots, ...localEmptySlots]
+        : (localEmptySlots.length ? localEmptySlots : [{ id: uid(), groupFilter: null, memberId: null }]);
+      return merged.slice(0, MAX_MEMBER_SLOTS);
+    });
     setSelectedEventId(sel.eventId || null);
     if (sel.activeTemplateId) setActiveTemplateId(sel.activeTemplateId);
     if (typeof sel.activeTemplateContent === "string") setActiveTemplateContent(sel.activeTemplateContent);
@@ -1076,18 +1078,23 @@ export default function App() {
   }, []);
 
   /* 選択状態（メンバー選択・イベント選択・テンプレート編集内容）は変更の度に共有保存する。
-     テンプレート編集は1文字ごとに変わるので、少し待ってからまとめて保存する（デバウンス）。 */
+     テンプレート編集は1文字ごとに変わるので、少し待ってからまとめて保存する（デバウンス）。
+     直前に他端末から受信した内容と同じ場合は、送り返す(エコー)だけになるので保存しない。 */
   const selectionSaveTimer = useRef(null);
   useEffect(() => {
     if (!loaded) return;
+    const payload = {
+      memberIds: memberSlots.map((s) => s.memberId).filter(Boolean),
+      eventId: selectedEventId,
+      activeTemplateId,
+      activeTemplateContent,
+    };
+    const serialized = JSON.stringify(payload);
+    if (serialized === lastRemoteSelectionRef.current) return;
     if (selectionSaveTimer.current) clearTimeout(selectionSaveTimer.current);
     selectionSaveTimer.current = setTimeout(() => {
-      saveShared("lastSelection", {
-        memberIds: memberSlots.map((s) => s.memberId).filter(Boolean),
-        eventId: selectedEventId,
-        activeTemplateId,
-        activeTemplateContent,
-      });
+      lastRemoteSelectionRef.current = serialized;
+      saveShared("lastSelection", payload);
     }, 600);
     return () => clearTimeout(selectionSaveTimer.current);
   }, [memberSlots, selectedEventId, activeTemplateId, activeTemplateContent, loaded]);
