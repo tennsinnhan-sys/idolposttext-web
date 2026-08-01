@@ -357,6 +357,77 @@ function MemberForm({ initial, onCancel, onSave, onDelete }) {
 /* メンバー管理ページ                                                    */
 /* ------------------------------------------------------------------ */
 
+/* ------------------------------------------------------------------ */
+/* スクショOCRからの登録                                                 */
+/* ------------------------------------------------------------------ */
+
+// OCRで読み取った文字の中から「名前」「Xアカウント」らしき行を推測する（あくまで下書き用の目安）
+function guessFromOcrText(text) {
+  const lines = text.split("\n").map((l) => l.trim()).filter(Boolean);
+  const accountLine = lines.find((l) => /@[A-Za-z0-9_]{2,}/.test(l));
+  const account = accountLine ? (accountLine.match(/@[A-Za-z0-9_]{2,}/) || [""])[0] : "";
+  const accountIndex = accountLine ? lines.indexOf(accountLine) : -1;
+  const candidateLines = accountIndex > 0 ? lines.slice(0, accountIndex) : lines.slice(0, 3);
+  const name = candidateLines
+    .filter((l) => !l.includes("@") && l.length <= 20)
+    .sort((a, b) => b.length - a.length)[0] || "";
+  return { name, account };
+}
+
+function OcrIntakeForm({ onCancel, onExtracted }) {
+  const [status, setStatus] = useState("idle"); // idle | loading | done | error
+  const [rawText, setRawText] = useState("");
+  const [preview, setPreview] = useState(null);
+
+  const handleFile = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setPreview(URL.createObjectURL(file));
+    setStatus("loading");
+    try {
+      const { createWorker } = await import("tesseract.js");
+      const worker = await createWorker("jpn+eng");
+      const { data } = await worker.recognize(file);
+      await worker.terminate();
+      setRawText(data.text || "");
+      setStatus("done");
+    } catch {
+      setStatus("error");
+    }
+  };
+
+  const guess = useMemo(() => guessFromOcrText(rawText), [rawText]);
+
+  return (
+    <Card>
+      <p className="text-xs text-gray-400 mb-3">
+        Xのプロフィール画面などのスクリーンショットを選ぶと、文字を読み取って「名前」「Xアカウント」の候補を入れます。読み取り精度は完璧ではないため、次の画面で必ず内容を確認・修正してください。
+      </p>
+      <label className="flex items-center gap-2 text-xs font-bold text-indigo-500 mb-3 cursor-pointer w-fit">
+        <Camera size={15} aria-hidden="true" />
+        画像を選ぶ
+        <input type="file" accept="image/*" onChange={handleFile} className="hidden" />
+      </label>
+      {preview && <img src={preview} alt="" className="max-h-40 rounded-xl mb-3 object-contain" />}
+      {status === "loading" && <p className="text-xs text-gray-400 mb-3">読み取り中…（数秒〜数十秒かかることがあります）</p>}
+      {status === "error" && <p className="text-xs text-rose-500 mb-3">読み取りに失敗しました。もう一度お試しください。</p>}
+      {status === "done" && (
+        <>
+          <p className="text-xs text-gray-400 mb-1.5">読み取れた文字</p>
+          <div className="bg-violet-50 rounded-xl p-3 text-xs text-gray-600 whitespace-pre-wrap mb-3 max-h-32 overflow-auto">
+            {rawText.trim() || "文字を検出できませんでした"}
+          </div>
+          <SoftButton tone="indigo" onClick={() => onExtracted(guess)} className="w-full mb-2">
+            この内容で登録フォームへ
+          </SoftButton>
+        </>
+      )}
+      <SoftButton tone="ghost" onClick={onCancel} className="w-full">キャンセル</SoftButton>
+    </Card>
+  );
+}
+
+
 function MembersPage({ members, setMembers, groupRegulations, setGroupRegulations, onBack }) {
   const [openGroup, setOpenGroup] = useState(null);
   const [editing, setEditing] = useState(null); // 'new' | member | null
@@ -390,9 +461,11 @@ function MembersPage({ members, setMembers, groupRegulations, setGroupRegulation
   const groups = useMemo(() => dedupedNonEmpty(members.map((m) => m.groupName)).sort(), [members]);
 
   const saveMember = (m) => {
+    const clean = { ...m };
+    delete clean.__new;
     setMembers((prev) => {
-      const exists = prev.some((x) => x.id === m.id);
-      return exists ? prev.map((x) => (x.id === m.id ? m : x)) : [...prev, m];
+      const exists = prev.some((x) => x.id === clean.id);
+      return exists ? prev.map((x) => (x.id === clean.id ? clean : x)) : [...prev, clean];
     });
     setEditing(null);
   };
@@ -429,15 +502,30 @@ function MembersPage({ members, setMembers, groupRegulations, setGroupRegulation
     );
   }
 
-  if (editing) {
+  if (editing === "ocr") {
     return (
       <div>
-        <TopBar title={editing === "new" ? "メンバー新規登録" : "メンバー編集"} onBack={() => setEditing(null)} />
+        <TopBar title="スクショから登録" onBack={() => setEditing(null)} />
+        <OcrIntakeForm
+          onCancel={() => setEditing(null)}
+          onExtracted={(guess) => {
+            setEditing({ ...emptyMember(openGroup || ""), name: guess.name, account: guess.account, __new: true });
+          }}
+        />
+      </div>
+    );
+  }
+
+  if (editing) {
+    const isNew = editing === "new" || editing.__new;
+    return (
+      <div>
+        <TopBar title={isNew ? "メンバー新規登録" : "メンバー編集"} onBack={() => setEditing(null)} />
         <MemberForm
           initial={editing === "new" ? emptyMember(openGroup || "") : editing}
           onCancel={() => setEditing(null)}
           onSave={saveMember}
-          onDelete={editing === "new" ? null : deleteMember}
+          onDelete={isNew ? null : deleteMember}
         />
       </div>
     );
@@ -449,12 +537,15 @@ function MembersPage({ members, setMembers, groupRegulations, setGroupRegulation
       <p className="text-[11px] text-indigo-400 bg-indigo-50 rounded-2xl px-3 py-2 mb-3">
         メンバー情報はこのアプリを使う全員で共有されます。誰でも追加・編集・削除できるのでご注意ください（イベント・テンプレート・投稿履歴・現在の選択状態も同様に共有されます）。
       </p>
-      <div className="flex gap-2 mb-4">
+      <div className="flex flex-wrap gap-2 mb-4">
         <SoftButton tone="indigo" onClick={() => setEditing("new")}>
           <Plus size={15} className="inline -mt-0.5 mr-1" />新規登録
         </SoftButton>
         <SoftButton tone="lavender" onClick={() => setEditing("bulk")}>
           <Users size={15} className="inline -mt-0.5 mr-1" />一括登録
+        </SoftButton>
+        <SoftButton tone="mint" onClick={() => setEditing("ocr")}>
+          <Camera size={15} className="inline -mt-0.5 mr-1" />スクショから登録
         </SoftButton>
       </div>
 
