@@ -991,6 +991,7 @@ function HomePage({ members, events, memberSlots, setMemberSlots, selectedEventI
     setMemberSlots((prev) => [...prev, { id: uid(), groupFilter: null, memberId: null }]);
   };
   const removeSlot = (index) => setMemberSlots((prev) => prev.filter((_, i) => i !== index));
+  const resetMemberSelection = () => setMemberSlots([{ id: uid(), groupFilter: null, memberId: null }]);
 
   const doCopy = async () => {
     try { await navigator.clipboard.writeText(text); setCopyFlash(true); setTimeout(() => setCopyFlash(false), 1500); } catch { /* noop */ }
@@ -1010,7 +1011,12 @@ function HomePage({ members, events, memberSlots, setMemberSlots, selectedEventI
         <CardHeader
           icon={Users}
           title="メンバー選択"
-          right={<button onClick={() => onNavigate("members")} className="text-xs font-bold text-indigo-500">一覧を管理</button>}
+          right={
+            <div className="flex items-center gap-3">
+              <button onClick={resetMemberSelection} className="text-xs font-bold text-gray-400">リセット</button>
+              <button onClick={() => onNavigate("members")} className="text-xs font-bold text-indigo-500">一覧を管理</button>
+            </div>
+          }
         />
         {groupNames.length === 0 ? (
           <p className="text-sm text-gray-400">保存済みメンバーはいません。まずは「一覧を管理」から登録してください。</p>
