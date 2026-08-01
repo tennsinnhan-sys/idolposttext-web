@@ -37,7 +37,7 @@ const symbolOf = (key) => (SYMBOLS.find((s) => s.key === key) || SYMBOLS[0]).Ico
 const CHAR_LIMIT = 280;
 const MAX_MEMBER_SLOTS = 10;
 
-const DEFAULT_TEMPLATE = `{メンバータグ一覧}
+const DEFAULT_TEMPLATE = `{名前一覧}
 {グループ一覧}
 {個人タグ一覧}
 {グループタグ一覧}
@@ -45,8 +45,8 @@ const DEFAULT_TEMPLATE = `{メンバータグ一覧}
 🎪{会場}
 {レギュレーション}`;
 
-const SINGLE_PLACEHOLDERS = ["グループ", "名前", "Xアカウント", "日付", "イベント名", "会場", "個人タグ", "グループタグ", "レギュレーション"];
-const MULTI_PLACEHOLDERS = ["メンバータグ一覧", "個人タグ一覧", "グループタグ一覧", "グループ一覧"];
+const SINGLE_PLACEHOLDERS = ["グループ", "グループタグ", "名前", "個人タグ", "Xアカウント", "日付", "イベント名", "会場", "レギュレーション"];
+const MULTI_PLACEHOLDERS = ["グループ一覧", "グループタグ一覧", "名前一覧", "個人タグ一覧"];
 
 function dedupedNonEmpty(arr) {
   const seen = new Set();
@@ -616,6 +616,7 @@ function TemplatesPage({ templates, setTemplates, activeId, setActiveId, content
   const overLimit = preview.length > CHAR_LIMIT;
 
   const selectTemplate = (t) => { setActiveId(t.id); setContent(t.content); };
+  const startNew = () => { setActiveId(null); setContent(""); };
   const overwrite = () => setTemplates((prev) => prev.map((t) => (t.id === activeId ? { ...t, content } : t)));
   const saveNew = () => {
     if (!nameDraft.trim()) return;
@@ -648,6 +649,10 @@ function TemplatesPage({ templates, setTemplates, activeId, setActiveId, content
   return (
     <div>
       <TopBar title="テンプレート選択・編集" onBack={onBack} />
+
+      <SoftButton tone="indigo" onClick={startNew} className="mb-4 w-full">
+        <Plus size={15} className="inline -mt-0.5 mr-1" />新規作成
+      </SoftButton>
 
       <Card className="mb-4">
         {templates.length === 0 && <p className="text-sm text-gray-400">保存済みテンプレートはありません</p>}
@@ -709,7 +714,7 @@ function TemplatesPage({ templates, setTemplates, activeId, setActiveId, content
 
       <div className="flex gap-2">
         <SoftButton tone="mint" onClick={overwrite} disabled={!activeId}>上書き保存</SoftButton>
-        <SoftButton tone="lavender" onClick={() => { setSavingNewName(true); setNameDraft(""); }}>新規保存</SoftButton>
+        <SoftButton tone="lavender" onClick={() => { setSavingNewName(true); setNameDraft(""); }}>名前を付けて保存</SoftButton>
         <SoftButton tone="pink" onClick={remove} disabled={!activeId}>削除</SoftButton>
       </div>
       {savingNewName && (
@@ -1146,7 +1151,8 @@ export default function App() {
     "個人タグ": first?.personalTag ? `#${first.personalTag}` : "",
     "グループタグ": first?.groupTag ? `#${first.groupTag}` : "",
     "レギュレーション": (first && groupRegulations[first.groupName]) || "",
-    "メンバータグ一覧": selectedMembers.map((m) => `#${m.name}`).join("\n"),
+    "名前一覧": selectedMembers.map((m) => `#${m.name}`).join("\n"),
+    "メンバータグ一覧": selectedMembers.map((m) => `#${m.name}`).join("\n"), // 旧名称。既存テンプレート互換のため残す
     "個人タグ一覧": dedupedNonEmpty(selectedMembers.map((m) => m.personalTag)).map((t) => `#${t}`).join("\n"),
     "グループタグ一覧": dedupedNonEmpty(selectedMembers.map((m) => m.groupTag)).map((t) => `#${t}`).join("\n"),
     "グループ一覧": dedupedNonEmpty(selectedMembers.map((m) => m.groupName)).map((t) => `#${t}`).join("\n"),
