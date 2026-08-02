@@ -101,13 +101,25 @@ function saveLocal(key, value) {
 
 async function loadShared(key, fallback) {
   if (!supabase) return loadLocal(key, fallback);
-  const { data, error } = await supabase.from("shared_data").select("value").eq("key", key).maybeSingle();
-  if (error || !data) return fallback;
-  return data.value ?? fallback;
+  try {
+    const { data, error } = await supabase.from("shared_data").select("value").eq("key", key).maybeSingle();
+    if (error) throw error;
+    const value = data ? (data.value ?? fallback) : fallback;
+    saveLocal(`cache:${key}`, value); // オフライン時のために手元にもミラーしておく
+    return value;
+  } catch {
+    // 通信できない場合は、直前にキャッシュしておいた内容を使う
+    return loadLocal(`cache:${key}`, fallback);
+  }
 }
 async function saveShared(key, value) {
-  if (!supabase) { saveLocal(key, value); return; }
-  await supabase.from("shared_data").upsert({ key, value, updated_at: new Date().toISOString() });
+  saveLocal(`cache:${key}`, value); // 通信の成否にかかわらず、常に手元にも保存しておく
+  if (!supabase) return;
+  try {
+    await supabase.from("shared_data").upsert({ key, value, updated_at: new Date().toISOString() });
+  } catch {
+    // オフライン時はここで失敗するが、手元には保存済みなのでオンライン復帰後に再送する
+  }
 }
 
 /* ------------------------------------------------------------------ */
@@ -1130,6 +1142,26 @@ export default function App() {
   // 最新のmembersを非同期コールバックからも参照できるようにしておく（他端末の選択状態を復元する際に使う）
   const membersRef = useRef([]);
   useEffect(() => { membersRef.current = members; }, [members]);
+  const eventsRef = useRef([]);
+  useEffect(() => { eventsRef.current = events; }, [events]);
+  const templatesRef = useRef([]);
+  useEffect(() => { templatesRef.current = templates; }, [templates]);
+  const historyRef = useRef([]);
+  useEffect(() => { historyRef.current = history; }, [history]);
+  const groupRegulationsRef = useRef({});
+  useEffect(() => { groupRegulationsRef.current = groupRegulations; }, [groupRegulations]);
+
+  const [isOnline, setIsOnline] = useState(typeof navigator !== "undefined" ? navigator.onLine : true);
+  useEffect(() => {
+    const goOnline = () => setIsOnline(true);
+    const goOffline = () => setIsOnline(false);
+    window.addEventListener("online", goOnline);
+    window.addEventListener("offline", goOffline);
+    return () => {
+      window.removeEventListener("online", goOnline);
+      window.removeEventListener("offline", goOffline);
+    };
+  }, []);
 
   // 「編集」専用の更新関数。生のsetXと違い、呼ばれた時点で必ずSupabaseへの保存も行う。
   // 読み込み・他端末からの同期(生のsetXを直接呼ぶ場合)では保存が走らないようにするための分離。
@@ -1218,6 +1250,21 @@ export default function App() {
       setLoaded(true);
     })();
   }, []);
+
+  /* オフライン中に行った変更は手元に保存されるだけになるので、
+     通信が回復したタイミングで、今手元にある内容を改めて送り直す（簡易的な再同期） */
+  useEffect(() => {
+    const resync = () => {
+      if (!supabase || !loaded) return;
+      saveShared("members", membersRef.current);
+      saveShared("events", eventsRef.current);
+      saveShared("templates", templatesRef.current);
+      saveShared("postHistory", historyRef.current);
+      saveShared("groupRegulations", groupRegulationsRef.current);
+    };
+    window.addEventListener("online", resync);
+    return () => window.removeEventListener("online", resync);
+  }, [loaded]);
 
   /* 他の人が更新したら、リアルタイムで反映する（メンバー・イベント・テンプレート・履歴・選択状態すべて） */
   useEffect(() => {
@@ -1377,6 +1424,12 @@ export default function App() {
           <span className="font-black text-xl tracking-tight text-gray-800">IdolPostText</span>
           <span className="text-[10px] font-bold text-indigo-400 bg-indigo-100 rounded-full px-2 py-0.5 ml-auto">Web版</span>
         </div>
+
+        {!isOnline && (
+          <p className="text-[11px] text-amber-700 bg-amber-50 rounded-2xl px-3 py-2 mb-3">
+            オフラインです。前回読み込んだ内容を表示しています。新規登録・編集した内容は、通信が回復すると自動で送信されます。
+          </p>
+        )}
 
         {!supabase && (
           <p className="text-[11px] text-rose-600 bg-rose-50 rounded-2xl px-3 py-2 mb-3">

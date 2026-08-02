@@ -8,3 +8,11 @@ ReactDOM.createRoot(document.getElementById("root")).render(
     <App />
   </React.StrictMode>
 );
+
+if ("serviceWorker" in navigator) {
+  window.addEventListener("load", () => {
+    navigator.serviceWorker.register("/sw.js").catch(() => {
+      /* 登録に失敗しても通常のオンライン利用には影響しないので無視する */
+    });
+  });
+}
