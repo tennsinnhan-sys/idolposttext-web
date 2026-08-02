@@ -454,14 +454,16 @@ function OcrIntakeForm({ onCancel, onExtracted }) {
 }
 
 
-function MembersPage({ members, setMembers, groupRegulations, setGroupRegulations, onBack }) {
+function MembersPage({ members, setMembers, groupRegulations, setGroupRegulations, groupReadings, setGroupReadings, onBack }) {
   const [openGroup, setOpenGroup] = useState(null);
   const [editing, setEditing] = useState(null); // 'new' | member | null
 
-  // 撮影レギュレーションは入力のたびに即保存すると同期が追いつかないので、
+  // 撮影レギュレーション・読み方は入力のたびに即保存すると同期が追いつかないので、
   // 入力中はローカルの下書きだけを更新し、少し待ってからまとめて保存する
   const [regulationDraft, setRegulationDraft] = useState("");
   const regulationSaveTimer = useRef(null);
+  const [readingDraft, setReadingDraft] = useState("");
+  const readingSaveTimer = useRef(null);
   const [carryAccount, setCarryAccount] = useState(false);
 
   const openGroupPanel = (g) => {
@@ -472,9 +474,17 @@ function MembersPage({ members, setMembers, groupRegulations, setGroupRegulation
         setGroupRegulations((prev) => ({ ...prev, [openGroup]: regulationDraft }));
       }
     }
+    if (readingSaveTimer.current) {
+      clearTimeout(readingSaveTimer.current);
+      readingSaveTimer.current = null;
+      if (openGroup) {
+        setGroupReadings((prev) => ({ ...prev, [openGroup]: readingDraft }));
+      }
+    }
     const next = openGroup === g ? null : g;
     setOpenGroup(next);
     setRegulationDraft(next ? (groupRegulations[next] || "") : "");
+    setReadingDraft(next ? (groupReadings[next] || "") : "");
   };
 
   const changeRegulationDraft = (g, value) => {
@@ -485,7 +495,21 @@ function MembersPage({ members, setMembers, groupRegulations, setGroupRegulation
     }, 500);
   };
 
-  const groups = useMemo(() => dedupedNonEmpty(members.map((m) => m.groupName)).sort(), [members]);
+  const changeReadingDraft = (g, value) => {
+    setReadingDraft(value);
+    if (readingSaveTimer.current) clearTimeout(readingSaveTimer.current);
+    readingSaveTimer.current = setTimeout(() => {
+      setGroupReadings((prev) => ({ ...prev, [g]: value }));
+    }, 500);
+  };
+
+  const groups = useMemo(
+    () =>
+      dedupedNonEmpty(members.map((m) => m.groupName)).sort((a, b) =>
+        (groupReadings[a] || a).localeCompare(groupReadings[b] || b, "ja")
+      ),
+    [members, groupReadings]
+  );
 
   const saveMember = (m) => {
     const clean = { ...m };
@@ -612,6 +636,11 @@ function MembersPage({ members, setMembers, groupRegulations, setGroupRegulation
             </button>
             {openGroup === g && (
               <div className="mt-3 space-y-3">
+                <TextInput
+                  value={readingDraft}
+                  onChange={(v) => changeReadingDraft(g, v)}
+                  placeholder="読み方（ひらがな・カタカナ／並び替えに使用）"
+                />
                 <TextInput
                   value={regulationDraft}
                   onChange={(v) => changeRegulationDraft(g, v)}
@@ -976,13 +1005,13 @@ function MemberSlotRow({ slot, members, groupNames, onChangeGroup, onChangeMembe
   );
 }
 
-function HomePage({ members, events, memberSlots, setMemberSlots, selectedEventId, setSelectedEventId, templates, activeTemplateContent, setActiveTemplateId, activeTemplateId, setActiveTemplateContent, values, recentGroups, touchGroup, onNavigate, recordHistory }) {
+function HomePage({ members, events, memberSlots, setMemberSlots, selectedEventId, setSelectedEventId, templates, activeTemplateContent, setActiveTemplateId, activeTemplateId, setActiveTemplateContent, values, recentGroups, touchGroup, groupReadings, onNavigate, recordHistory }) {
   const groupNames = useMemo(() => {
     const all = dedupedNonEmpty(members.map((m) => m.groupName));
     const used = recentGroups.filter((g) => all.includes(g));
-    const rest = all.filter((g) => !used.includes(g)).sort();
+    const rest = all.filter((g) => !used.includes(g)).sort((a, b) => (groupReadings[a] || a).localeCompare(groupReadings[b] || b, "ja"));
     return [...used, ...rest];
-  }, [members, recentGroups]);
+  }, [members, recentGroups, groupReadings]);
   const selectedEvent = events.find((e) => e.id === selectedEventId);
   const [openEvent, setOpenEvent] = useState(false);
   const [copyFlash, setCopyFlash] = useState(false);
@@ -1140,6 +1169,7 @@ export default function App() {
   const [templates, setTemplates] = useState([]);
   const [history, setHistory] = useState([]);
   const [groupRegulations, setGroupRegulationsRaw] = useState({});
+  const [groupReadings, setGroupReadingsRaw] = useState({});
 
   const [memberSlots, setMemberSlots] = useState([{ id: uid(), groupFilter: null, memberId: null }]);
   const [selectedEventId, setSelectedEventId] = useState(null);
@@ -1168,6 +1198,8 @@ export default function App() {
   useEffect(() => { historyRef.current = history; }, [history]);
   const groupRegulationsRef = useRef({});
   useEffect(() => { groupRegulationsRef.current = groupRegulations; }, [groupRegulations]);
+  const groupReadingsRef = useRef({});
+  useEffect(() => { groupReadingsRef.current = groupReadings; }, [groupReadings]);
 
   const [isOnline, setIsOnline] = useState(typeof navigator !== "undefined" ? navigator.onLine : true);
   useEffect(() => {
@@ -1219,6 +1251,13 @@ export default function App() {
       return next;
     });
   };
+  const setGroupReadings = (updater) => {
+    setGroupReadingsRaw((prev) => {
+      const next = typeof updater === "function" ? updater(prev) : updater;
+      saveShared("groupReadings", next);
+      return next;
+    });
+  };
 
   // 選択中の状態（メンバー選択・イベント選択・テンプレート編集内容）を、起動時に一度だけ復元する
   const applySelection = (sel) => {
@@ -1236,13 +1275,14 @@ export default function App() {
   /* 初回読み込み */
   useEffect(() => {
     (async () => {
-      const [m, e, t, h, sel, gr] = await Promise.all([
+      const [m, e, t, h, sel, gr, grd] = await Promise.all([
         loadShared("members", []),
         loadShared("events", []),
         loadShared("templates", []),
         loadShared("postHistory", []),
         loadShared("lastSelection", null),
         loadShared("groupRegulations", {}),
+        loadShared("groupReadings", {}),
       ]);
 
       setMembers(m);
@@ -1254,6 +1294,7 @@ export default function App() {
       if (isFreshDefault) saveShared("templates", finalTemplates);
       setHistory(h);
       setGroupRegulationsRaw(gr || {});
+      setGroupReadingsRaw(grd || {});
 
       if (sel) {
         applySelection(sel);
@@ -1279,6 +1320,7 @@ export default function App() {
       saveShared("templates", templatesRef.current);
       saveShared("postHistory", historyRef.current);
       saveShared("groupRegulations", groupRegulationsRef.current);
+      saveShared("groupReadings", groupReadingsRef.current);
     };
     window.addEventListener("online", resync);
     return () => window.removeEventListener("online", resync);
@@ -1487,6 +1529,7 @@ export default function App() {
             values={values}
             recentGroups={recentGroups}
             touchGroup={touchGroup}
+            groupReadings={groupReadings}
             onNavigate={setView}
             recordHistory={recordHistory}
           />
@@ -1497,6 +1540,8 @@ export default function App() {
             setMembers={updateMembers}
             groupRegulations={groupRegulations}
             setGroupRegulations={setGroupRegulations}
+            groupReadings={groupReadings}
+            setGroupReadings={setGroupReadings}
             onBack={() => setView("home")}
           />
         )}
