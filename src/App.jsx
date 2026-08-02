@@ -730,10 +730,11 @@ function EventsPage({ events, setEvents, onBack }) {
 /* テンプレート管理ページ（チップ挿入・ライブプレビュー付き）              */
 /* ------------------------------------------------------------------ */
 
-function TemplatesPage({ templates, setTemplates, activeId, setActiveId, content, setContent, values, onBack }) {
+function TemplatesPage({ templates, setTemplates, activeId, setActiveId, content, setContent, values, recordHistory, onBack }) {
   const [renaming, setRenaming] = useState(false);
   const [savingNewName, setSavingNewName] = useState(false);
   const [nameDraft, setNameDraft] = useState("");
+  const [copyFlash, setCopyFlash] = useState(false);
   const taRef = useRef(null);
   const pendingCursor = useRef(null);
 
@@ -758,6 +759,15 @@ function TemplatesPage({ templates, setTemplates, activeId, setActiveId, content
 
   const preview = useMemo(() => buildText(content, values), [content, values]);
   const overLimit = preview.length > CHAR_LIMIT;
+
+  const doCopy = async () => {
+    try { await navigator.clipboard.writeText(preview); setCopyFlash(true); setTimeout(() => setCopyFlash(false), 1500); } catch { /* noop */ }
+    recordHistory(preview);
+  };
+  const doPost = () => {
+    recordHistory(preview);
+    window.open(`https://twitter.com/intent/tweet?text=${encodeURIComponent(preview)}`, "_blank");
+  };
 
   const selectTemplate = (t) => { setActiveId(t.id); setContent(t.content); };
   const startNew = () => { setActiveId(null); setContent(""); };
@@ -851,9 +861,17 @@ function TemplatesPage({ templates, setTemplates, activeId, setActiveId, content
       <Card className="mb-4">
         <div className="flex items-center gap-1.5 text-xs text-gray-400 mb-2"><Eye size={13} />プレビュー（現在の選択内容で自動更新）</div>
         <div className="bg-violet-50 rounded-2xl p-3 text-sm text-gray-800 whitespace-pre-wrap min-h-[60px]">{preview}</div>
-        <p className={`text-right text-[11px] mt-1.5 ${overLimit ? "text-rose-500" : "text-gray-400"}`}>
+        <p className={`text-right text-[11px] mt-1.5 mb-3 ${overLimit ? "text-rose-500" : "text-gray-400"}`}>
           {preview.length} / {CHAR_LIMIT}文字（{overLimit ? `${preview.length - CHAR_LIMIT}文字オーバー` : `あと${CHAR_LIMIT - preview.length}文字`}）
         </p>
+        <div className="space-y-2">
+          <SoftButton tone="indigo" onClick={doCopy} className="w-full">
+            <Copy size={15} className="inline -mt-0.5 mr-1.5" />{copyFlash ? "コピーしました！" : "コピー"}
+          </SoftButton>
+          <SoftButton tone="indigo" onClick={doPost} className="w-full">
+            <Send size={15} className="inline -mt-0.5 mr-1.5" />Xで投稿
+          </SoftButton>
+        </div>
       </Card>
 
       <div className="flex gap-2">
@@ -1492,6 +1510,7 @@ export default function App() {
             content={activeTemplateContent}
             setContent={setActiveTemplateContent}
             values={values}
+            recordHistory={recordHistory}
             onBack={() => setView("home")}
           />
         )}
