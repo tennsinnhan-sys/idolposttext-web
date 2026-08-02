@@ -958,48 +958,60 @@ function HistoryPage({ history, setHistory, onBack }) {
 /* ホーム（投稿作成）ページ                                              */
 /* ------------------------------------------------------------------ */
 
-function MemberSlotRow({ slot, members, groupNames, onChangeGroup, onChangeMember, onRemove, removable }) {
+function MemberSlotRow({ slot, members, groupNames, onChangeGroup, onChangeMember, onBulkAddGroup, onRemove, removable }) {
   const current = members.find((m) => m.id === slot.memberId);
   const groupMembers = members.filter((m) => m.groupName === slot.groupFilter);
 
   return (
-    <div className="flex items-center gap-2 border-l-2 border-dashed border-indigo-200 pl-3 py-1">
-      <div className="relative">
-        <select
-          value={slot.groupFilter || ""}
-          onChange={(e) => onChangeGroup(e.target.value || null)}
-          className="appearance-none text-sm text-indigo-600 font-bold bg-transparent border-none outline-none max-w-[120px] truncate pr-4"
-        >
-          <option value="">グループ</option>
-          {groupNames.map((g) => (
-            <option key={g} value={g}>{g}</option>
-          ))}
-        </select>
-        <ChevronDown size={12} className="pointer-events-none absolute right-0 top-1/2 -translate-y-1/2 text-indigo-400" />
+    <div className="border-l-2 border-dashed border-indigo-200 pl-3 py-1">
+      <div className="flex items-center gap-2">
+        <div className="relative">
+          <select
+            value={slot.groupFilter || ""}
+            onChange={(e) => onChangeGroup(e.target.value || null)}
+            className="appearance-none text-sm text-indigo-600 font-bold bg-transparent border-none outline-none max-w-[120px] truncate pr-4"
+          >
+            <option value="">グループ</option>
+            {groupNames.map((g) => (
+              <option key={g} value={g}>{g}</option>
+            ))}
+          </select>
+          <ChevronDown size={12} className="pointer-events-none absolute right-0 top-1/2 -translate-y-1/2 text-indigo-400" />
+        </div>
+
+        {slot.groupFilter && (
+          <div className="flex items-center gap-1">
+            {current && <IconBadge colorKey={current.iconColorName} symbolKey={current.iconSymbol} size={18} />}
+            <div className="relative">
+              <select
+                value={slot.memberId || ""}
+                onChange={(e) => onChangeMember(e.target.value || null)}
+                className="appearance-none text-sm text-indigo-600 font-bold bg-transparent border-none outline-none max-w-[110px] truncate pr-4"
+              >
+                <option value="">選択なし</option>
+                {groupMembers.map((m) => (
+                  <option key={m.id} value={m.id}>{m.name}</option>
+                ))}
+              </select>
+              <ChevronDown size={12} className="pointer-events-none absolute right-0 top-1/2 -translate-y-1/2 text-indigo-400" />
+            </div>
+          </div>
+        )}
+
+        <span className="flex-1" />
+        {removable && (
+          <button onClick={onRemove} className="text-gray-300"><X size={16} /></button>
+        )}
       </div>
 
-      {slot.groupFilter && (
-        <div className="flex items-center gap-1">
-          {current && <IconBadge colorKey={current.iconColorName} symbolKey={current.iconSymbol} size={18} />}
-          <div className="relative">
-            <select
-              value={slot.memberId || ""}
-              onChange={(e) => onChangeMember(e.target.value || null)}
-              className="appearance-none text-sm text-indigo-600 font-bold bg-transparent border-none outline-none max-w-[110px] truncate pr-4"
-            >
-              <option value="">選択なし</option>
-              {groupMembers.map((m) => (
-                <option key={m.id} value={m.id}>{m.name}</option>
-              ))}
-            </select>
-            <ChevronDown size={12} className="pointer-events-none absolute right-0 top-1/2 -translate-y-1/2 text-indigo-400" />
-          </div>
-        </div>
-      )}
-
-      <span className="flex-1" />
-      {removable && (
-        <button onClick={onRemove} className="text-gray-300"><X size={16} /></button>
+      {slot.groupFilter && !slot.memberId && groupMembers.length > 0 && (
+        <button
+          onClick={onBulkAddGroup}
+          className="mt-1.5 inline-flex items-center gap-1.5 bg-indigo-50 text-indigo-600 text-xs font-bold rounded-2xl px-3 py-1.5"
+        >
+          <Users size={13} aria-hidden="true" />
+          {slot.groupFilter}全員（{groupMembers.length}人）を追加
+        </button>
       )}
     </div>
   );
@@ -1028,6 +1040,16 @@ function HomePage({ members, events, memberSlots, setMemberSlots, selectedEventI
   };
   const removeSlot = (index) => setMemberSlots((prev) => prev.filter((_, i) => i !== index));
   const resetMemberSelection = () => setMemberSlots([{ id: uid(), groupFilter: null, memberId: null }]);
+  const bulkAddGroup = (index, groupName) => {
+    const groupMembers = members.filter((m) => m.groupName === groupName);
+    if (groupMembers.length === 0) return;
+    setMemberSlots((prev) => {
+      const newSlots = groupMembers.map((m) => ({ id: uid(), groupFilter: m.groupName, memberId: m.id }));
+      const combined = [...prev.slice(0, index), ...newSlots, ...prev.slice(index + 1)];
+      return combined.slice(0, MAX_MEMBER_SLOTS);
+    });
+    touchGroup(groupName);
+  };
 
   const doCopy = async () => {
     try { await navigator.clipboard.writeText(text); setCopyFlash(true); setTimeout(() => setCopyFlash(false), 1500); } catch { /* noop */ }
@@ -1075,6 +1097,7 @@ function HomePage({ members, events, memberSlots, setMemberSlots, selectedEventI
                     const m = members.find((mm) => mm.id === id);
                     if (m) touchGroup(m.groupName);
                   }}
+                  onBulkAddGroup={() => bulkAddGroup(i, slot.groupFilter)}
                   onRemove={() => removeSlot(i)}
                 />
               ))}
