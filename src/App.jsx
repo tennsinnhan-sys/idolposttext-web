@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useMemo } from "react";
 import {
-  Star, Heart, Sparkles, Moon, Sun, Leaf, Flame, Droplet, Crown, Music, Camera, Bird,
+  Sparkles, Camera,
   Users, CalendarDays, FileText, History, Plus, X, Pencil, Trash2, Copy, Send,
   ChevronLeft, ChevronRight, ChevronUp, ChevronDown, Check, Eye, EyeOff, Download, Upload
 } from "lucide-react";
@@ -30,14 +30,6 @@ const COLORS = [
 // 旧カラー名（紫・ピンク）は、統合後の色に自動で読み替える
 const LEGACY_COLOR_ALIAS = { purple: "purpledark", pink: "pinkdark" };
 const colorOf = (key) => COLORS.find((c) => c.key === (LEGACY_COLOR_ALIAS[key] || key)) || COLORS[7];
-
-const SYMBOLS = [
-  { key: "star", Icon: Star }, { key: "heart", Icon: Heart }, { key: "sparkles", Icon: Sparkles },
-  { key: "moon", Icon: Moon }, { key: "sun", Icon: Sun }, { key: "leaf", Icon: Leaf },
-  { key: "flame", Icon: Flame }, { key: "drop", Icon: Droplet }, { key: "crown", Icon: Crown },
-  { key: "music", Icon: Music }, { key: "camera", Icon: Camera }, { key: "bird", Icon: Bird },
-];
-const symbolOf = (key) => (SYMBOLS.find((s) => s.key === key) || SYMBOLS[0]).Icon;
 
 const CHAR_LIMIT = 280;
 const MAX_MEMBER_SLOTS = 10;
@@ -151,18 +143,15 @@ function CardHeader({ icon: Icon, title, right }) {
   );
 }
 
-function IconBadge({ colorKey, colorKey2, symbolKey, size = 32 }) {
+function IconBadge({ colorKey, colorKey2, size = 32 }) {
   const c = colorOf(colorKey);
   const c2 = colorKey2 ? colorOf(colorKey2) : null;
-  const Icon = symbolOf(symbolKey);
   const background = c2 ? `linear-gradient(135deg, ${c.hex} 50%, ${c2.hex} 50%)` : c.hex;
   return (
     <div
-      className="rounded-full ring-1 ring-black/10 flex items-center justify-center flex-shrink-0"
+      className="rounded-full ring-1 ring-black/10 flex-shrink-0"
       style={{ width: size, height: size, background }}
-    >
-      <Icon size={size * 0.5} style={{ color: c.text }} strokeWidth={2.2} />
-    </div>
+    />
   );
 }
 
@@ -215,11 +204,11 @@ function TopBar({ title, onBack }) {
 /* アイコン（色・シンボル）選択                                          */
 /* ------------------------------------------------------------------ */
 
-function IconPicker({ colorKey, colorKey2, symbolKey, onChangeColor, onChangeColor2, onChangeSymbol }) {
+function IconPicker({ colorKey, colorKey2, onChangeColor, onChangeColor2 }) {
   return (
     <div>
       <p className="text-xs font-bold text-gray-400 mb-2">アイコン</p>
-      <IconBadge colorKey={colorKey} colorKey2={colorKey2} symbolKey={symbolKey} size={48} />
+      <IconBadge colorKey={colorKey} colorKey2={colorKey2} size={48} />
 
       <p className="text-xs text-gray-400 mt-4 mb-1.5">カラー</p>
       <div className="flex flex-wrap gap-2">
@@ -237,12 +226,6 @@ function IconPicker({ colorKey, colorKey2, symbolKey, onChangeColor, onChangeCol
         第2色（任意・2色のメンバーカラーに対応する場合のみ）
       </p>
       <div className="flex flex-wrap gap-2">
-        <button
-          onClick={() => onChangeColor2(null)}
-          className={`w-7 h-7 rounded-full bg-white ring-1 ring-gray-300 flex items-center justify-center text-[10px] text-gray-400 ${!colorKey2 ? "ring-2 ring-offset-2 ring-indigo-500" : ""}`}
-        >
-          なし
-        </button>
         {COLORS.map((c) => (
           <button
             key={c.key}
@@ -251,24 +234,12 @@ function IconPicker({ colorKey, colorKey2, symbolKey, onChangeColor, onChangeCol
             className={`w-7 h-7 rounded-full ring-1 ring-gray-300 ${colorKey2 === c.key ? "ring-2 ring-offset-2 ring-indigo-500" : ""}`}
           />
         ))}
-      </div>
-
-      <p className="text-xs text-gray-400 mt-4 mb-1.5">シンボル</p>
-      <div className="grid grid-cols-6 gap-2">
-        {SYMBOLS.map((s) => {
-          const active = symbolKey === s.key;
-          const c = colorOf(colorKey);
-          return (
-            <button
-              key={s.key}
-              onClick={() => onChangeSymbol(s.key)}
-              style={active ? { backgroundColor: c.hex, color: c.text } : undefined}
-              className={`w-9 h-9 rounded-full flex items-center justify-center transition ${active ? "" : "bg-violet-50 text-gray-400"}`}
-            >
-              <s.Icon size={17} />
-            </button>
-          );
-        })}
+        <button
+          onClick={() => onChangeColor2(null)}
+          className={`w-7 h-7 rounded-full bg-white ring-1 ring-gray-300 flex items-center justify-center text-[10px] text-gray-400 ${!colorKey2 ? "ring-2 ring-offset-2 ring-indigo-500" : ""}`}
+        >
+          なし
+        </button>
       </div>
     </div>
   );
@@ -379,10 +350,8 @@ function MemberForm({ initial, onCancel, onSave, onDelete }) {
         <IconPicker
           colorKey={m.iconColorName}
           colorKey2={m.iconColorName2}
-          symbolKey={m.iconSymbol}
           onChangeColor={(k) => setM((p) => ({ ...p, iconColorName: k }))}
           onChangeColor2={(k) => setM((p) => ({ ...p, iconColorName2: k }))}
-          onChangeSymbol={(k) => setM((p) => ({ ...p, iconSymbol: k }))}
         />
       </div>
       <div className="flex gap-2 mt-5">
@@ -694,7 +663,7 @@ function MembersPage({ members, setMembers, groupRegulations, setGroupRegulation
                 <div className="space-y-2">
                   {members.filter((m) => m.groupName === g).map((m, i, arr) => (
                   <div key={m.id} className="flex items-center gap-2 bg-violet-50 rounded-2xl px-3 py-2">
-                    <IconBadge colorKey={m.iconColorName} colorKey2={m.iconColorName2} symbolKey={m.iconSymbol} size={30} />
+                    <IconBadge colorKey={m.iconColorName} colorKey2={m.iconColorName2} size={30} />
                     <div className="flex-1 min-w-0">
                       <p className="text-sm font-bold text-gray-800 truncate">{m.name}</p>
                       <p className="text-xs text-gray-400 truncate">{m.account}</p>
@@ -1053,7 +1022,7 @@ function MemberSlotRow({ slot, members, groupNames, onChangeGroup, onChangeMembe
 
         {slot.groupFilter && (
           <div className="flex items-center gap-1">
-            {current && <IconBadge colorKey={current.iconColorName} colorKey2={current.iconColorName2} symbolKey={current.iconSymbol} size={18} />}
+            {current && <IconBadge colorKey={current.iconColorName} colorKey2={current.iconColorName2} size={18} />}
             <div className="relative">
               <select
                 value={slot.memberId || ""}
