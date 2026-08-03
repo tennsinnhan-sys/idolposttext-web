@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useMemo } from "react";
 import {
-  Sparkles, Camera,
+  Sparkles, Camera, GripVertical,
   Users, CalendarDays, FileText, History, Plus, X, Pencil, Trash2, Copy, Send,
   ChevronLeft, ChevronRight, ChevronUp, ChevronDown, Check, Eye, EyeOff, Download, Upload
 } from "lucide-react";
@@ -998,13 +998,26 @@ function HistoryPage({ history, setHistory, onBack }) {
 /* ホーム（投稿作成）ページ                                              */
 /* ------------------------------------------------------------------ */
 
-function MemberSlotRow({ slot, members, groupNames, onChangeGroup, onChangeMember, onBulkAddGroup, onRemove, removable }) {
+function MemberSlotRow({ slot, members, groupNames, onChangeGroup, onChangeMember, onBulkAddGroup, onDragStart, onDragMove, onDragEnd, isDragging, dragDeltaY, onRemove, removable }) {
   const current = members.find((m) => m.id === slot.memberId);
   const groupMembers = members.filter((m) => m.groupName === slot.groupFilter);
 
   return (
-    <div className="border-l-2 border-dashed border-indigo-200 pl-3 py-1">
+    <div
+      className={`border-l-2 border-dashed border-indigo-200 pl-3 py-1 ${isDragging ? "bg-indigo-50 rounded-xl shadow-lg" : ""}`}
+      style={isDragging ? { transform: `translateY(${dragDeltaY}px)`, position: "relative", zIndex: 10 } : undefined}
+    >
       <div className="flex items-center gap-2">
+        <div
+          onPointerDown={onDragStart}
+          onPointerMove={onDragMove}
+          onPointerUp={onDragEnd}
+          onPointerCancel={onDragEnd}
+          style={{ touchAction: "none" }}
+          className="text-gray-300 cursor-grab active:cursor-grabbing shrink-0"
+        >
+          <GripVertical size={16} />
+        </div>
         <div className="relative">
           <select
             value={slot.groupFilter || ""}
@@ -1078,6 +1091,38 @@ function HomePage({ members, events, memberSlots, setMemberSlots, selectedEventI
     setMemberSlots((prev) => [...prev, { id: uid(), groupFilter: null, memberId: null }]);
   };
   const removeSlot = (index) => setMemberSlots((prev) => prev.filter((_, i) => i !== index));
+
+  // ドラッグ&ドロップでの並び替え（マウス・タッチ共通のPointer Eventsを使用）
+  const ROW_HEIGHT = 42;
+  const [dragState, setDragState] = useState(null); // { index, startY, deltaY, pointerId }
+
+  const handleDragStart = (index, e) => {
+    e.preventDefault();
+    e.currentTarget.setPointerCapture(e.pointerId);
+    setDragState({ index, startY: e.clientY, deltaY: 0, pointerId: e.pointerId });
+  };
+  const handleDragMove = (e) => {
+    setDragState((s) => {
+      if (!s || e.pointerId !== s.pointerId) return s;
+      const deltaY = e.clientY - s.startY;
+      const shift = Math.round(deltaY / ROW_HEIGHT);
+      if (shift !== 0) {
+        const targetIndex = Math.min(Math.max(s.index + shift, 0), memberSlots.length - 1);
+        if (targetIndex !== s.index) {
+          setMemberSlots((prev) => {
+            const next = [...prev];
+            const [moved] = next.splice(s.index, 1);
+            next.splice(targetIndex, 0, moved);
+            return next;
+          });
+          return { ...s, index: targetIndex, startY: s.startY + shift * ROW_HEIGHT, deltaY: deltaY - shift * ROW_HEIGHT };
+        }
+      }
+      return { ...s, deltaY };
+    });
+  };
+  const handleDragEnd = () => setDragState(null);
+
   const resetMemberSelection = () => setMemberSlots([{ id: uid(), groupFilter: null, memberId: null }]);
   const bulkAddGroup = (index, groupName) => {
     const groupMembers = members.filter((m) => m.groupName === groupName);
@@ -1136,6 +1181,11 @@ function HomePage({ members, events, memberSlots, setMemberSlots, selectedEventI
                     if (m) touchGroup(m.groupName);
                   }}
                   onBulkAddGroup={() => bulkAddGroup(i, slot.groupFilter)}
+                  onDragStart={(e) => handleDragStart(i, e)}
+                  onDragMove={handleDragMove}
+                  onDragEnd={handleDragEnd}
+                  isDragging={dragState?.index === i}
+                  dragDeltaY={dragState?.index === i ? dragState.deltaY : 0}
                   onRemove={() => removeSlot(i)}
                 />
               ))}
