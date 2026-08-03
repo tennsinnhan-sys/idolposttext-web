@@ -12,14 +12,14 @@ import {
 const uid = () => (crypto.randomUUID ? crypto.randomUUID() : `id-${Date.now()}-${Math.random().toString(16).slice(2)}`);
 
 const COLORS = [
-  { key: "red", hex: "#FB7185", text: "#9f1239" },
+  { key: "red", hex: "#EF4444", text: "#7f1d1d" },
   { key: "orange", hex: "#FB923C", text: "#9a3412" },
   { key: "yellow", hex: "#FCD34D", text: "#92400e" },
-  { key: "green", hex: "#6EE7A0", text: "#065f46" },
+  { key: "green", hex: "#57D966", text: "#14532d" },
   { key: "yellowgreen", hex: "#BEF264", text: "#3f6212" },
   { key: "mint", hex: "#5EEAD4", text: "#115e59" },
   { key: "skyblue", hex: "#7DD3FC", text: "#075985" },
-  { key: "blue", hex: "#6366F1", text: "#312e81" },
+  { key: "blue", hex: "#3B82F6", text: "#1e3a8a" },
   { key: "purplelight", hex: "#DDD6FE", text: "#5b21b6" },
   { key: "purpledark", hex: "#A78BFA", text: "#4c1d95" },
   { key: "pinklight", hex: "#FBCFE8", text: "#9d174d" },
