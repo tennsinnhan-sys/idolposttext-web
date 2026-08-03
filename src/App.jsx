@@ -12,19 +12,24 @@ import {
 const uid = () => (crypto.randomUUID ? crypto.randomUUID() : `id-${Date.now()}-${Math.random().toString(16).slice(2)}`);
 
 const COLORS = [
-  { key: "red", bg: "bg-rose-300", ring: "ring-rose-400", text: "text-rose-700" },
-  { key: "orange", bg: "bg-orange-300", ring: "ring-orange-400", text: "text-orange-700" },
-  { key: "yellow", bg: "bg-amber-300", ring: "ring-amber-400", text: "text-amber-700" },
-  { key: "green", bg: "bg-emerald-300", ring: "ring-emerald-400", text: "text-emerald-700" },
-  { key: "mint", bg: "bg-teal-300", ring: "ring-teal-400", text: "text-teal-700" },
-  { key: "skyblue", bg: "bg-sky-300", ring: "ring-sky-400", text: "text-sky-700" },
-  { key: "blue", bg: "bg-indigo-400", ring: "ring-indigo-500", text: "text-indigo-800" },
-  { key: "purple", bg: "bg-violet-300", ring: "ring-violet-400", text: "text-violet-700" },
-  { key: "pink", bg: "bg-pink-300", ring: "ring-pink-400", text: "text-pink-700" },
-  { key: "white", bg: "bg-white", ring: "ring-gray-300", text: "text-gray-400" },
-  { key: "black", bg: "bg-gray-800", ring: "ring-gray-900", text: "text-gray-100" },
+  { key: "red", hex: "#FB7185", text: "#9f1239" },
+  { key: "orange", hex: "#FB923C", text: "#9a3412" },
+  { key: "yellow", hex: "#FCD34D", text: "#92400e" },
+  { key: "green", hex: "#6EE7A0", text: "#065f46" },
+  { key: "yellowgreen", hex: "#BEF264", text: "#3f6212" },
+  { key: "mint", hex: "#5EEAD4", text: "#115e59" },
+  { key: "skyblue", hex: "#7DD3FC", text: "#075985" },
+  { key: "blue", hex: "#6366F1", text: "#312e81" },
+  { key: "purplelight", hex: "#DDD6FE", text: "#5b21b6" },
+  { key: "purpledark", hex: "#A78BFA", text: "#4c1d95" },
+  { key: "pinklight", hex: "#FBCFE8", text: "#9d174d" },
+  { key: "pinkdark", hex: "#F472B6", text: "#831843" },
+  { key: "white", hex: "#FFFFFF", text: "#9ca3af" },
+  { key: "black", hex: "#374151", text: "#f3f4f6" },
 ];
-const colorOf = (key) => COLORS.find((c) => c.key === key) || COLORS[6];
+// 旧カラー名（紫・ピンク）は、統合後の色に自動で読み替える
+const LEGACY_COLOR_ALIAS = { purple: "purpledark", pink: "pinkdark" };
+const colorOf = (key) => COLORS.find((c) => c.key === (LEGACY_COLOR_ALIAS[key] || key)) || COLORS[7];
 
 const SYMBOLS = [
   { key: "star", Icon: Star }, { key: "heart", Icon: Heart }, { key: "sparkles", Icon: Sparkles },
@@ -146,15 +151,17 @@ function CardHeader({ icon: Icon, title, right }) {
   );
 }
 
-function IconBadge({ colorKey, symbolKey, size = 32 }) {
+function IconBadge({ colorKey, colorKey2, symbolKey, size = 32 }) {
   const c = colorOf(colorKey);
+  const c2 = colorKey2 ? colorOf(colorKey2) : null;
   const Icon = symbolOf(symbolKey);
+  const background = c2 ? `linear-gradient(135deg, ${c.hex} 50%, ${c2.hex} 50%)` : c.hex;
   return (
     <div
-      className={`rounded-full ${c.bg} ring-1 ${c.ring} flex items-center justify-center flex-shrink-0`}
-      style={{ width: size, height: size }}
+      className="rounded-full ring-1 ring-black/10 flex items-center justify-center flex-shrink-0"
+      style={{ width: size, height: size, background }}
     >
-      <Icon size={size * 0.5} className={c.text} strokeWidth={2.2} />
+      <Icon size={size * 0.5} style={{ color: c.text }} strokeWidth={2.2} />
     </div>
   );
 }
@@ -208,11 +215,11 @@ function TopBar({ title, onBack }) {
 /* アイコン（色・シンボル）選択                                          */
 /* ------------------------------------------------------------------ */
 
-function IconPicker({ colorKey, symbolKey, onChangeColor, onChangeSymbol }) {
+function IconPicker({ colorKey, colorKey2, symbolKey, onChangeColor, onChangeColor2, onChangeSymbol }) {
   return (
     <div>
       <p className="text-xs font-bold text-gray-400 mb-2">アイコン</p>
-      <IconBadge colorKey={colorKey} symbolKey={symbolKey} size={48} />
+      <IconBadge colorKey={colorKey} colorKey2={colorKey2} symbolKey={symbolKey} size={48} />
 
       <p className="text-xs text-gray-400 mt-4 mb-1.5">カラー</p>
       <div className="flex flex-wrap gap-2">
@@ -220,24 +227,48 @@ function IconPicker({ colorKey, symbolKey, onChangeColor, onChangeSymbol }) {
           <button
             key={c.key}
             onClick={() => onChangeColor(c.key)}
-            className={`w-7 h-7 rounded-full ${c.bg} ring-1 ring-gray-300 ${colorKey === c.key ? "ring-2 ring-offset-2 ring-indigo-500" : ""}`}
+            style={{ backgroundColor: c.hex }}
+            className={`w-7 h-7 rounded-full ring-1 ring-gray-300 ${colorKey === c.key ? "ring-2 ring-offset-2 ring-indigo-500" : ""}`}
+          />
+        ))}
+      </div>
+
+      <p className="text-xs text-gray-400 mt-4 mb-1.5">
+        第2色（任意・2色のメンバーカラーに対応する場合のみ）
+      </p>
+      <div className="flex flex-wrap gap-2">
+        <button
+          onClick={() => onChangeColor2(null)}
+          className={`w-7 h-7 rounded-full bg-white ring-1 ring-gray-300 flex items-center justify-center text-[10px] text-gray-400 ${!colorKey2 ? "ring-2 ring-offset-2 ring-indigo-500" : ""}`}
+        >
+          なし
+        </button>
+        {COLORS.map((c) => (
+          <button
+            key={c.key}
+            onClick={() => onChangeColor2(c.key)}
+            style={{ backgroundColor: c.hex }}
+            className={`w-7 h-7 rounded-full ring-1 ring-gray-300 ${colorKey2 === c.key ? "ring-2 ring-offset-2 ring-indigo-500" : ""}`}
           />
         ))}
       </div>
 
       <p className="text-xs text-gray-400 mt-4 mb-1.5">シンボル</p>
       <div className="grid grid-cols-6 gap-2">
-        {SYMBOLS.map((s) => (
-          <button
-            key={s.key}
-            onClick={() => onChangeSymbol(s.key)}
-            className={`w-9 h-9 rounded-full flex items-center justify-center transition ${
-              symbolKey === s.key ? `${colorOf(colorKey).bg} ${colorOf(colorKey).text}` : "bg-violet-50 text-gray-400"
-            }`}
-          >
-            <s.Icon size={17} />
-          </button>
-        ))}
+        {SYMBOLS.map((s) => {
+          const active = symbolKey === s.key;
+          const c = colorOf(colorKey);
+          return (
+            <button
+              key={s.key}
+              onClick={() => onChangeSymbol(s.key)}
+              style={active ? { backgroundColor: c.hex, color: c.text } : undefined}
+              className={`w-9 h-9 rounded-full flex items-center justify-center transition ${active ? "" : "bg-violet-50 text-gray-400"}`}
+            >
+              <s.Icon size={17} />
+            </button>
+          );
+        })}
       </div>
     </div>
   );
@@ -330,7 +361,7 @@ function BulkMemberForm({ onCancel, onSave }) {
 
 
 function emptyMember(groupName = "") {
-  return { id: uid(), groupName, name: "", account: "", personalTag: "", groupTag: "", iconColorName: "blue", iconSymbol: "star" };
+  return { id: uid(), groupName, name: "", account: "", personalTag: "", groupTag: "", iconColorName: "blue", iconColorName2: null, iconSymbol: "star" };
 }
 
 function MemberForm({ initial, onCancel, onSave, onDelete }) {
@@ -347,8 +378,10 @@ function MemberForm({ initial, onCancel, onSave, onDelete }) {
         <TextInput value={m.groupTag} onChange={set("groupTag")} placeholder="グループタグ" />
         <IconPicker
           colorKey={m.iconColorName}
+          colorKey2={m.iconColorName2}
           symbolKey={m.iconSymbol}
           onChangeColor={(k) => setM((p) => ({ ...p, iconColorName: k }))}
+          onChangeColor2={(k) => setM((p) => ({ ...p, iconColorName2: k }))}
           onChangeSymbol={(k) => setM((p) => ({ ...p, iconSymbol: k }))}
         />
       </div>
@@ -661,7 +694,7 @@ function MembersPage({ members, setMembers, groupRegulations, setGroupRegulation
                 <div className="space-y-2">
                   {members.filter((m) => m.groupName === g).map((m, i, arr) => (
                   <div key={m.id} className="flex items-center gap-2 bg-violet-50 rounded-2xl px-3 py-2">
-                    <IconBadge colorKey={m.iconColorName} symbolKey={m.iconSymbol} size={30} />
+                    <IconBadge colorKey={m.iconColorName} colorKey2={m.iconColorName2} symbolKey={m.iconSymbol} size={30} />
                     <div className="flex-1 min-w-0">
                       <p className="text-sm font-bold text-gray-800 truncate">{m.name}</p>
                       <p className="text-xs text-gray-400 truncate">{m.account}</p>
@@ -1020,7 +1053,7 @@ function MemberSlotRow({ slot, members, groupNames, onChangeGroup, onChangeMembe
 
         {slot.groupFilter && (
           <div className="flex items-center gap-1">
-            {current && <IconBadge colorKey={current.iconColorName} symbolKey={current.iconSymbol} size={18} />}
+            {current && <IconBadge colorKey={current.iconColorName} colorKey2={current.iconColorName2} symbolKey={current.iconSymbol} size={18} />}
             <div className="relative">
               <select
                 value={slot.memberId || ""}
