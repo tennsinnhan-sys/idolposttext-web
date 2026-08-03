@@ -32,7 +32,6 @@ const LEGACY_COLOR_ALIAS = { purple: "purpledark", pink: "pinkdark" };
 const colorOf = (key) => COLORS.find((c) => c.key === (LEGACY_COLOR_ALIAS[key] || key)) || COLORS[7];
 
 const CHAR_LIMIT = 280;
-const MAX_MEMBER_SLOTS = 10;
 
 const DEFAULT_TEMPLATE = `{名前一覧}
 {グループ一覧}
@@ -1076,7 +1075,6 @@ function HomePage({ members, events, memberSlots, setMemberSlots, selectedEventI
     setMemberSlots((prev) => prev.map((s, i) => (i === index ? { ...s, ...patch } : s)));
   };
   const addSlot = () => {
-    if (memberSlots.length >= MAX_MEMBER_SLOTS) return;
     setMemberSlots((prev) => [...prev, { id: uid(), groupFilter: null, memberId: null }]);
   };
   const removeSlot = (index) => setMemberSlots((prev) => prev.filter((_, i) => i !== index));
@@ -1086,8 +1084,7 @@ function HomePage({ members, events, memberSlots, setMemberSlots, selectedEventI
     if (groupMembers.length === 0) return;
     setMemberSlots((prev) => {
       const newSlots = groupMembers.map((m) => ({ id: uid(), groupFilter: m.groupName, memberId: m.id }));
-      const combined = [...prev.slice(0, index), ...newSlots, ...prev.slice(index + 1)];
-      return combined.slice(0, MAX_MEMBER_SLOTS);
+      return [...prev.slice(0, index), ...newSlots, ...prev.slice(index + 1)];
     });
     touchGroup(groupName);
   };
@@ -1143,11 +1140,7 @@ function HomePage({ members, events, memberSlots, setMemberSlots, selectedEventI
                 />
               ))}
             </div>
-            {memberSlots.length < MAX_MEMBER_SLOTS ? (
-              <button onClick={addSlot} className="text-xs font-bold text-indigo-500">＋ メンバーを追加</button>
-            ) : (
-              <p className="text-[11px] text-gray-400">最大{MAX_MEMBER_SLOTS}人まで選択できます（Xのタグ付け上限）</p>
-            )}
+            <button onClick={addSlot} className="text-xs font-bold text-indigo-500">＋ メンバーを追加</button>
           </>
         )}
       </Card>
