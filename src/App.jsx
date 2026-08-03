@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef, useMemo } from "react";
 import {
   Star, Heart, Sparkles, Moon, Sun, Leaf, Flame, Droplet, Crown, Music, Camera, Bird,
   Users, CalendarDays, FileText, History, Plus, X, Pencil, Trash2, Copy, Send,
-  ChevronLeft, ChevronRight, ChevronUp, ChevronDown, Check, Eye, Download, Upload
+  ChevronLeft, ChevronRight, ChevronUp, ChevronDown, Check, Eye, EyeOff, Download, Upload
 } from "lucide-react";
 
 /* ------------------------------------------------------------------ */
@@ -454,9 +454,10 @@ function OcrIntakeForm({ onCancel, onExtracted }) {
 }
 
 
-function MembersPage({ members, setMembers, groupRegulations, setGroupRegulations, groupReadings, setGroupReadings, onBack }) {
+function MembersPage({ members, setMembers, groupRegulations, setGroupRegulations, groupReadings, setGroupReadings, groupHidden, setGroupHidden, onBack }) {
   const [openGroup, setOpenGroup] = useState(null);
   const [editing, setEditing] = useState(null); // 'new' | member | null
+  const [showHiddenGroups, setShowHiddenGroups] = useState(false);
 
   // 撮影レギュレーション・読み方は入力のたびに即保存すると同期が追いつかないので、
   // 入力中はローカルの下書きだけを更新し、少し待ってからまとめて保存する
@@ -503,13 +504,19 @@ function MembersPage({ members, setMembers, groupRegulations, setGroupRegulation
     }, 500);
   };
 
-  const groups = useMemo(
+  const allGroups = useMemo(
     () =>
       dedupedNonEmpty(members.map((m) => m.groupName)).sort((a, b) =>
         (groupReadings[a] || a).localeCompare(groupReadings[b] || b, "ja")
       ),
     [members, groupReadings]
   );
+  const groups = useMemo(() => allGroups.filter((g) => !groupHidden[g]), [allGroups, groupHidden]);
+  const hiddenGroupList = useMemo(() => allGroups.filter((g) => groupHidden[g]), [allGroups, groupHidden]);
+
+  const toggleGroupHidden = (g) => {
+    setGroupHidden((prev) => ({ ...prev, [g]: !prev[g] }));
+  };
 
   const saveMember = (m) => {
     const clean = { ...m };
@@ -629,8 +636,13 @@ function MembersPage({ members, setMembers, groupRegulations, setGroupRegulation
           <Card key={g}>
             <button className="w-full flex items-center justify-between" onClick={() => openGroupPanel(g)}>
               <span className="font-bold text-gray-800">{g}</span>
-              <span className="flex items-center gap-2 text-xs text-gray-400">
+              <span className="flex items-center gap-3 text-xs text-gray-400">
                 {members.filter((m) => m.groupName === g).length}人
+                <Eye
+                  size={16}
+                  className="text-gray-300"
+                  onClick={(e) => { e.stopPropagation(); toggleGroupHidden(g); }}
+                />
                 {openGroup === g ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
               </span>
             </button>
@@ -676,6 +688,33 @@ function MembersPage({ members, setMembers, groupRegulations, setGroupRegulation
           </Card>
         ))}
       </div>
+
+      {hiddenGroupList.length > 0 && (
+        <div className="mt-4">
+          <button
+            className="flex items-center gap-1.5 text-xs text-gray-400"
+            onClick={() => setShowHiddenGroups((v) => !v)}
+          >
+            {showHiddenGroups ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
+            非表示のグループ（{hiddenGroupList.length}）
+          </button>
+          {showHiddenGroups && (
+            <div className="mt-2 space-y-1.5">
+              {hiddenGroupList.map((g) => (
+                <div key={g} className="flex items-center justify-between bg-white rounded-2xl px-4 py-2.5">
+                  <span className="text-sm text-gray-400">{g}</span>
+                  <button
+                    className="flex items-center gap-1 text-xs font-bold text-indigo-500"
+                    onClick={() => toggleGroupHidden(g)}
+                  >
+                    <EyeOff size={14} />表示に戻す
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }
@@ -1017,13 +1056,13 @@ function MemberSlotRow({ slot, members, groupNames, onChangeGroup, onChangeMembe
   );
 }
 
-function HomePage({ members, events, memberSlots, setMemberSlots, selectedEventId, setSelectedEventId, templates, activeTemplateContent, setActiveTemplateId, activeTemplateId, setActiveTemplateContent, values, recentGroups, touchGroup, groupReadings, onNavigate, recordHistory }) {
+function HomePage({ members, events, memberSlots, setMemberSlots, selectedEventId, setSelectedEventId, templates, activeTemplateContent, setActiveTemplateId, activeTemplateId, setActiveTemplateContent, values, recentGroups, touchGroup, groupReadings, groupHidden, onNavigate, recordHistory }) {
   const groupNames = useMemo(() => {
-    const all = dedupedNonEmpty(members.map((m) => m.groupName));
+    const all = dedupedNonEmpty(members.map((m) => m.groupName)).filter((g) => !groupHidden[g]);
     const used = recentGroups.filter((g) => all.includes(g));
     const rest = all.filter((g) => !used.includes(g)).sort((a, b) => (groupReadings[a] || a).localeCompare(groupReadings[b] || b, "ja"));
     return [...used, ...rest];
-  }, [members, recentGroups, groupReadings]);
+  }, [members, recentGroups, groupReadings, groupHidden]);
   const selectedEvent = events.find((e) => e.id === selectedEventId);
   const [openEvent, setOpenEvent] = useState(false);
   const [copyFlash, setCopyFlash] = useState(false);
@@ -1193,6 +1232,7 @@ export default function App() {
   const [history, setHistory] = useState([]);
   const [groupRegulations, setGroupRegulationsRaw] = useState({});
   const [groupReadings, setGroupReadingsRaw] = useState({});
+  const [groupHidden, setGroupHiddenRaw] = useState({});
 
   const [memberSlots, setMemberSlots] = useState([{ id: uid(), groupFilter: null, memberId: null }]);
   const [selectedEventId, setSelectedEventId] = useState(null);
@@ -1223,6 +1263,8 @@ export default function App() {
   useEffect(() => { groupRegulationsRef.current = groupRegulations; }, [groupRegulations]);
   const groupReadingsRef = useRef({});
   useEffect(() => { groupReadingsRef.current = groupReadings; }, [groupReadings]);
+  const groupHiddenRef = useRef({});
+  useEffect(() => { groupHiddenRef.current = groupHidden; }, [groupHidden]);
 
   const [isOnline, setIsOnline] = useState(typeof navigator !== "undefined" ? navigator.onLine : true);
   useEffect(() => {
@@ -1281,6 +1323,13 @@ export default function App() {
       return next;
     });
   };
+  const setGroupHidden = (updater) => {
+    setGroupHiddenRaw((prev) => {
+      const next = typeof updater === "function" ? updater(prev) : updater;
+      saveShared("groupHidden", next);
+      return next;
+    });
+  };
 
   // 選択中の状態（メンバー選択・イベント選択・テンプレート編集内容）を、起動時に一度だけ復元する
   const applySelection = (sel) => {
@@ -1298,7 +1347,7 @@ export default function App() {
   /* 初回読み込み */
   useEffect(() => {
     (async () => {
-      const [m, e, t, h, sel, gr, grd] = await Promise.all([
+      const [m, e, t, h, sel, gr, grd, gh] = await Promise.all([
         loadShared("members", []),
         loadShared("events", []),
         loadShared("templates", []),
@@ -1306,6 +1355,7 @@ export default function App() {
         loadShared("lastSelection", null),
         loadShared("groupRegulations", {}),
         loadShared("groupReadings", {}),
+        loadShared("groupHidden", {}),
       ]);
 
       setMembers(m);
@@ -1318,6 +1368,7 @@ export default function App() {
       setHistory(h);
       setGroupRegulationsRaw(gr || {});
       setGroupReadingsRaw(grd || {});
+      setGroupHiddenRaw(gh || {});
 
       if (sel) {
         applySelection(sel);
@@ -1344,6 +1395,7 @@ export default function App() {
       saveShared("postHistory", historyRef.current);
       saveShared("groupRegulations", groupRegulationsRef.current);
       saveShared("groupReadings", groupReadingsRef.current);
+      saveShared("groupHidden", groupHiddenRef.current);
     };
     window.addEventListener("online", resync);
     return () => window.removeEventListener("online", resync);
@@ -1372,6 +1424,9 @@ export default function App() {
               break;
             case "postHistory":
               setHistory(row.value || []);
+              break;
+            case "groupHidden":
+              setGroupHiddenRaw(row.value || {});
               break;
             // groupRegulations（撮影レギュレーション）も、入力中に他端末の反映で
             // 文字が消えたり戻ったりしてしまうのを避けるため、リアルタイム反映はしない。
@@ -1553,6 +1608,7 @@ export default function App() {
             recentGroups={recentGroups}
             touchGroup={touchGroup}
             groupReadings={groupReadings}
+            groupHidden={groupHidden}
             onNavigate={setView}
             recordHistory={recordHistory}
           />
@@ -1565,6 +1621,8 @@ export default function App() {
             setGroupRegulations={setGroupRegulations}
             groupReadings={groupReadings}
             setGroupReadings={setGroupReadings}
+            groupHidden={groupHidden}
+            setGroupHidden={setGroupHidden}
             onBack={() => setView("home")}
           />
         )}
