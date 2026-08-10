@@ -1174,7 +1174,7 @@ function HomePage({ members, events, memberSlots, setMemberSlots, selectedEventI
                   onChangeGroup={(g) => {
                     updateSlot(i, { groupFilter: g, memberId: null });
                     touchGroup(g);
-                    if (g && !selectedEventId) {
+                    if (g) {
                       const remembered = groupLastEvent[g];
                       if (remembered && events.some((e) => e.id === remembered)) {
                         setSelectedEventId(remembered);
