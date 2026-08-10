@@ -1174,9 +1174,9 @@ function HomePage({ members, events, memberSlots, setMemberSlots, selectedEventI
                   onChangeGroup={(g) => {
                     updateSlot(i, { groupFilter: g, memberId: null });
                     touchGroup(g);
-                    if (g) {
+                    if (g && Object.prototype.hasOwnProperty.call(groupLastEvent, g)) {
                       const remembered = groupLastEvent[g];
-                      if (remembered && events.some((e) => e.id === remembered)) {
+                      if (remembered === null || events.some((e) => e.id === remembered)) {
                         setSelectedEventId(remembered);
                       }
                     }
@@ -1217,7 +1217,15 @@ function HomePage({ members, events, memberSlots, setMemberSlots, selectedEventI
             </button>
             {openEvent && (
               <div className="absolute z-10 mt-1 bg-white rounded-2xl shadow-lg py-1.5 min-w-[220px] max-h-56 overflow-auto">
-                <button className="block w-full text-left px-3 py-1.5 text-sm text-gray-400" onClick={() => { setSelectedEventId(null); setOpenEvent(false); }}>選択なし</button>
+                <button
+                  className="block w-full text-left px-3 py-1.5 text-sm text-gray-400"
+                  onClick={() => {
+                    setSelectedEventId(null);
+                    setOpenEvent(false);
+                    const groupsInUse = dedupedNonEmpty(memberSlots.map((s) => s.groupFilter));
+                    groupsInUse.forEach((g) => rememberGroupEvent(g, null));
+                  }}
+                >選択なし</button>
                 {[...events].sort((a, b) => (a.date < b.date ? 1 : -1)).map((e) => (
                   <button
                     key={e.id}
@@ -1313,7 +1321,7 @@ export default function App() {
 
   // 「このグループでは前回このイベントを使った」という対応を覚えておく（個人用・このブラウザだけ）
   const rememberGroupEvent = (groupName, eventId) => {
-    if (!groupName || !eventId) return;
+    if (!groupName) return;
     setGroupLastEvent((prev) => {
       if (prev[groupName] === eventId) return prev;
       const next = { ...prev, [groupName]: eventId };
