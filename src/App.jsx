@@ -1070,7 +1070,7 @@ function MemberSlotRow({ slot, members, groupNames, onChangeGroup, onChangeMembe
   );
 }
 
-function HomePage({ members, events, memberSlots, setMemberSlots, selectedEventId, setSelectedEventId, templates, activeTemplateContent, setActiveTemplateId, activeTemplateId, setActiveTemplateContent, values, recentGroups, touchGroup, groupReadings, groupHidden, onNavigate, recordHistory }) {
+function HomePage({ members, events, memberSlots, setMemberSlots, selectedEventId, setSelectedEventId, templates, activeTemplateContent, setActiveTemplateId, activeTemplateId, setActiveTemplateContent, values, recentGroups, touchGroup, groupLastEvent, rememberGroupEvent, groupReadings, groupHidden, onNavigate, recordHistory }) {
   const groupNames = useMemo(() => {
     const all = dedupedNonEmpty(members.map((m) => m.groupName)).filter((g) => !groupHidden[g]);
     const used = recentGroups.filter((g) => all.includes(g));
@@ -1174,6 +1174,12 @@ function HomePage({ members, events, memberSlots, setMemberSlots, selectedEventI
                   onChangeGroup={(g) => {
                     updateSlot(i, { groupFilter: g, memberId: null });
                     touchGroup(g);
+                    if (g && !selectedEventId) {
+                      const remembered = groupLastEvent[g];
+                      if (remembered && events.some((e) => e.id === remembered)) {
+                        setSelectedEventId(remembered);
+                      }
+                    }
                   }}
                   onChangeMember={(id) => {
                     updateSlot(i, { memberId: id });
@@ -1213,7 +1219,16 @@ function HomePage({ members, events, memberSlots, setMemberSlots, selectedEventI
               <div className="absolute z-10 mt-1 bg-white rounded-2xl shadow-lg py-1.5 min-w-[220px] max-h-56 overflow-auto">
                 <button className="block w-full text-left px-3 py-1.5 text-sm text-gray-400" onClick={() => { setSelectedEventId(null); setOpenEvent(false); }}>選択なし</button>
                 {[...events].sort((a, b) => (a.date < b.date ? 1 : -1)).map((e) => (
-                  <button key={e.id} className="block w-full text-left px-3 py-1.5 text-sm text-gray-800" onClick={() => { setSelectedEventId(e.id); setOpenEvent(false); }}>
+                  <button
+                    key={e.id}
+                    className="block w-full text-left px-3 py-1.5 text-sm text-gray-800"
+                    onClick={() => {
+                      setSelectedEventId(e.id);
+                      setOpenEvent(false);
+                      const groupsInUse = dedupedNonEmpty(memberSlots.map((s) => s.groupFilter));
+                      groupsInUse.forEach((g) => rememberGroupEvent(g, e.id));
+                    }}
+                  >
                     {formatDate(e.date)} {e.eventName}
                   </button>
                 ))}
@@ -1284,6 +1299,7 @@ export default function App() {
   const [activeTemplateId, setActiveTemplateId] = useState(null);
   const [activeTemplateContent, setActiveTemplateContent] = useState(DEFAULT_TEMPLATE);
   const [recentGroups, setRecentGroups] = useState(() => loadLocal("recentGroups", []));
+  const [groupLastEvent, setGroupLastEvent] = useState(() => loadLocal("groupLastEvent", {}));
 
   // グループを選ぶ・そのグループのメンバーを選ぶ、のどちらかが起きるたびに「使った順」を更新する
   const touchGroup = (groupName) => {
@@ -1291,6 +1307,17 @@ export default function App() {
     setRecentGroups((prev) => {
       const next = [groupName, ...prev.filter((g) => g !== groupName)];
       saveLocal("recentGroups", next);
+      return next;
+    });
+  };
+
+  // 「このグループでは前回このイベントを使った」という対応を覚えておく（個人用・このブラウザだけ）
+  const rememberGroupEvent = (groupName, eventId) => {
+    if (!groupName || !eventId) return;
+    setGroupLastEvent((prev) => {
+      if (prev[groupName] === eventId) return prev;
+      const next = { ...prev, [groupName]: eventId };
+      saveLocal("groupLastEvent", next);
       return next;
     });
   };
@@ -1652,6 +1679,8 @@ export default function App() {
             values={values}
             recentGroups={recentGroups}
             touchGroup={touchGroup}
+            groupLastEvent={groupLastEvent}
+            rememberGroupEvent={rememberGroupEvent}
             groupReadings={groupReadings}
             groupHidden={groupHidden}
             onNavigate={setView}
