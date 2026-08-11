@@ -42,7 +42,7 @@ const DEFAULT_TEMPLATE = `{名前一覧}
 {レギュレーション}`;
 
 const SINGLE_PLACEHOLDERS = ["グループ", "グループタグ", "名前", "個人タグ", "Xアカウント", "日付", "イベント名", "会場", "レギュレーション"];
-const MULTI_PLACEHOLDERS = ["グループ一覧", "グループタグ一覧", "名前一覧", "個人タグ一覧"];
+const MULTI_PLACEHOLDERS = ["グループ一覧", "グループタグ一覧", "名前一覧", "名前一覧・繋", "個人タグ一覧", "レギュレーション一覧"];
 
 function dedupedNonEmpty(arr) {
   const seen = new Set();
@@ -912,7 +912,7 @@ function TemplatesPage({ templates, setTemplates, activeId, setActiveId, content
             <button key={k} onClick={() => insert(k)} className="text-[11px] font-bold bg-violet-100 text-violet-700 rounded-full px-2.5 py-1.5">{k}</button>
           ))}
         </div>
-        <p className="text-xs text-gray-400 mb-2">複数人まとめて使う場合（1人ずつ改行して並びます）</p>
+        <p className="text-xs text-gray-400 mb-2">複数人まとめて使う場合（「・繋」は半角スペース区切り、それ以外は1人ずつ改行）</p>
         <div className="flex flex-wrap gap-1.5 mb-3">
           {MULTI_PLACEHOLDERS.map((k) => (
             <button key={k} onClick={() => insert(k)} className="text-[11px] font-bold bg-teal-100 text-teal-700 rounded-full px-2.5 py-1.5">{k}</button>
@@ -1070,7 +1070,7 @@ function MemberSlotRow({ slot, members, groupNames, onChangeGroup, onChangeMembe
   );
 }
 
-function HomePage({ members, events, memberSlots, setMemberSlots, selectedEventId, setSelectedEventId, templates, activeTemplateContent, setActiveTemplateId, activeTemplateId, setActiveTemplateContent, values, recentGroups, touchGroup, groupLastEvent, rememberGroupEvent, groupReadings, groupHidden, onNavigate, recordHistory }) {
+function HomePage({ members, events, memberSlots, setMemberSlots, selectedEventId, setSelectedEventId, templates, activeTemplateContent, setActiveTemplateId, activeTemplateId, setActiveTemplateContent, values, recentGroups, touchGroup, groupLastEvent, rememberGroupEvent, groupReadings, groupHidden, groupRegulations, setGroupRegulations, onNavigate, recordHistory }) {
   const groupNames = useMemo(() => {
     const all = dedupedNonEmpty(members.map((m) => m.groupName)).filter((g) => !groupHidden[g]);
     const used = recentGroups.filter((g) => all.includes(g));
@@ -1080,6 +1080,23 @@ function HomePage({ members, events, memberSlots, setMemberSlots, selectedEventI
   const selectedEvent = events.find((e) => e.id === selectedEventId);
   const [openEvent, setOpenEvent] = useState(false);
   const [copyFlash, setCopyFlash] = useState(false);
+
+  // グループごとの撮影レギュレーションを、このプレビュー画面からも編集できるようにする
+  const [regulationDrafts, setRegulationDrafts] = useState({});
+  const regulationTimers = useRef({});
+  const regulationValueFor = (g) =>
+    Object.prototype.hasOwnProperty.call(regulationDrafts, g) ? regulationDrafts[g] : (groupRegulations[g] || "");
+  const changeRegulationDraft = (g, value) => {
+    setRegulationDrafts((prev) => ({ ...prev, [g]: value }));
+    if (regulationTimers.current[g]) clearTimeout(regulationTimers.current[g]);
+    regulationTimers.current[g] = setTimeout(() => {
+      setGroupRegulations((prev) => ({ ...prev, [g]: value }));
+    }, 500);
+  };
+  const selectedGroupsForRegulation = useMemo(
+    () => dedupedNonEmpty(memberSlots.map((s) => s.groupFilter)),
+    [memberSlots]
+  );
 
   const text = useMemo(() => buildText(activeTemplateContent, values), [activeTemplateContent, values]);
   const overLimit = text.length > CHAR_LIMIT;
@@ -1265,6 +1282,27 @@ function HomePage({ members, events, memberSlots, setMemberSlots, selectedEventI
                 {t.name}
               </button>
             ))}
+          </div>
+        )}
+
+        {selectedGroupsForRegulation.length > 0 && (
+          <div className="mb-3">
+            <div className="flex items-center gap-1.5 text-xs text-gray-400 mb-2">
+              <Camera size={13} />撮影レギュレーション（グループごとに編集）
+            </div>
+            <div className="space-y-1.5">
+              {selectedGroupsForRegulation.map((g) => (
+                <div key={g} className="flex items-center gap-2">
+                  <span className="text-xs font-bold text-amber-700 w-24 flex-shrink-0 truncate">{g}</span>
+                  <input
+                    value={regulationValueFor(g)}
+                    onChange={(e) => changeRegulationDraft(g, e.target.value)}
+                    placeholder="未入力・タップして追加"
+                    className="flex-1 text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-xl px-2.5 py-1.5 outline-none"
+                  />
+                </div>
+              ))}
+            </div>
           </div>
         )}
 
@@ -1560,12 +1598,16 @@ export default function App() {
     "個人タグ": first?.personalTag ? `#${first.personalTag}` : "",
     "グループタグ": first?.groupTag ? `#${first.groupTag}` : "",
     "レギュレーション": (first && groupRegulations[first.groupName]) || "",
+    "レギュレーション一覧": dedupedNonEmpty(
+      dedupedNonEmpty(selectedMembers.map((m) => m.groupName)).map((g) => groupRegulations[g] || "")
+    ).join("\n"),
     "名前一覧": selectedMembers.map((m) => `#${m.name}`).join("\n"),
+    "名前一覧・繋": selectedMembers.map((m) => `#${m.name}`).join(" "),
     "メンバータグ一覧": selectedMembers.map((m) => `#${m.name}`).join("\n"), // 旧名称。既存テンプレート互換のため残す
     "個人タグ一覧": dedupedNonEmpty(selectedMembers.map((m) => m.personalTag)).map((t) => `#${t}`).join("\n"),
     "グループタグ一覧": dedupedNonEmpty(selectedMembers.map((m) => m.groupTag)).map((t) => `#${t}`).join("\n"),
     "グループ一覧": dedupedNonEmpty(selectedMembers.map((m) => m.groupName)).map((t) => `#${t}`).join("\n"),
-  }), [first, selectedEvent, selectedMembers]);
+  }), [first, selectedEvent, selectedMembers, groupRegulations]);
 
   const recordHistory = (text) => {
     if (!text.trim()) return;
@@ -1691,6 +1733,8 @@ export default function App() {
             rememberGroupEvent={rememberGroupEvent}
             groupReadings={groupReadings}
             groupHidden={groupHidden}
+            groupRegulations={groupRegulations}
+            setGroupRegulations={setGroupRegulations}
             onNavigate={setView}
             recordHistory={recordHistory}
           />
