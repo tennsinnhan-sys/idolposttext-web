@@ -1286,23 +1286,18 @@ function HomePage({ members, events, memberSlots, setMemberSlots, selectedEventI
         )}
 
         {selectedGroupsForRegulation.length > 0 && (
-          <div className="mb-3">
-            <div className="flex items-center gap-1.5 text-xs text-gray-400 mb-2">
-              <Camera size={13} />撮影レギュレーション（グループごとに編集）
-            </div>
-            <div className="space-y-1.5">
-              {selectedGroupsForRegulation.map((g) => (
-                <div key={g} className="flex items-center gap-2">
-                  <span className="text-xs font-bold text-amber-700 w-24 flex-shrink-0 truncate">{g}</span>
-                  <input
-                    value={regulationValueFor(g)}
-                    onChange={(e) => changeRegulationDraft(g, e.target.value)}
-                    placeholder="未入力・タップして追加"
-                    className="flex-1 text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-xl px-2.5 py-1.5 outline-none"
-                  />
-                </div>
-              ))}
-            </div>
+          <div className="mb-3 space-y-1.5">
+            {selectedGroupsForRegulation.map((g) => (
+              <div key={g} className="flex items-center gap-2">
+                <span className="text-xs font-bold text-amber-700 w-24 flex-shrink-0 truncate">{g}</span>
+                <input
+                  value={regulationValueFor(g)}
+                  onChange={(e) => changeRegulationDraft(g, e.target.value)}
+                  placeholder="未入力・タップして追加"
+                  className="flex-1 text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-xl px-2.5 py-1.5 outline-none"
+                />
+              </div>
+            ))}
           </div>
         )}
 
