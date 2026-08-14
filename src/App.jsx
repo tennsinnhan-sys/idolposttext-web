@@ -986,7 +986,7 @@ function TemplatesPage({ templates, setTemplates, activeId, setActiveId, content
 /* 履歴ページ                                                           */
 /* ------------------------------------------------------------------ */
 
-function HistoryPage({ history, setHistory, members, onBack }) {
+function HistoryPage({ history, setHistory, members, groupReadings, onBack }) {
   const [copiedId, setCopiedId] = useState(null);
   const [groupFilter, setGroupFilter] = useState("");
   const [memberFilter, setMemberFilter] = useState("");
@@ -996,7 +996,10 @@ function HistoryPage({ history, setHistory, members, onBack }) {
     try { await navigator.clipboard.writeText(h.text); setCopiedId(h.id); } catch { /* noop */ }
   };
 
-  const groupNames = useMemo(() => dedupedNonEmpty(members.map((m) => m.groupName)).sort((a, b) => a.localeCompare(b, "ja")), [members]);
+  const groupNames = useMemo(
+    () => dedupedNonEmpty(members.map((m) => m.groupName)).sort((a, b) => (groupReadings[a] || a).localeCompare(groupReadings[b] || b, "ja")),
+    [members, groupReadings]
+  );
   const groupMemberNames = useMemo(
     () => dedupedNonEmpty(members.filter((m) => !groupFilter || m.groupName === groupFilter).map((m) => m.name)).sort((a, b) => a.localeCompare(b, "ja")),
     [members, groupFilter]
@@ -1865,7 +1868,7 @@ export default function App() {
             onBack={() => setView("home")}
           />
         )}
-        {view === "history" && <HistoryPage history={history} setHistory={updateHistory} members={members} onBack={() => setView("home")} />}
+        {view === "history" && <HistoryPage history={history} setHistory={updateHistory} members={members} groupReadings={groupReadings} onBack={() => setView("home")} />}
       </div>
     </div>
   );
