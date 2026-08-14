@@ -1,8 +1,8 @@
 import React, { useState, useEffect, useRef, useMemo } from "react";
 import {
-  Star, Heart, Sparkles, Moon, Sun, Leaf, Flame, Droplet, Crown, Music, Camera, Bird,
+  Sparkles, Camera, GripVertical,
   Users, CalendarDays, FileText, History, Plus, X, Pencil, Trash2, Copy, Send,
-  ChevronLeft, ChevronRight, ChevronUp, ChevronDown, Check, Eye, Download, Upload
+  ChevronLeft, ChevronRight, ChevronUp, ChevronDown, Check, Eye, EyeOff, Download, Upload
 } from "lucide-react";
 
 /* ------------------------------------------------------------------ */
@@ -12,41 +12,39 @@ import {
 const uid = () => (crypto.randomUUID ? crypto.randomUUID() : `id-${Date.now()}-${Math.random().toString(16).slice(2)}`);
 
 const COLORS = [
-  { key: "red", bg: "bg-rose-300", ring: "ring-rose-400", text: "text-rose-700" },
-  { key: "orange", bg: "bg-orange-300", ring: "ring-orange-400", text: "text-orange-700" },
-  { key: "yellow", bg: "bg-amber-300", ring: "ring-amber-400", text: "text-amber-700" },
-  { key: "green", bg: "bg-emerald-300", ring: "ring-emerald-400", text: "text-emerald-700" },
-  { key: "mint", bg: "bg-teal-300", ring: "ring-teal-400", text: "text-teal-700" },
-  { key: "skyblue", bg: "bg-sky-300", ring: "ring-sky-400", text: "text-sky-700" },
-  { key: "blue", bg: "bg-indigo-400", ring: "ring-indigo-500", text: "text-indigo-800" },
-  { key: "purple", bg: "bg-violet-300", ring: "ring-violet-400", text: "text-violet-700" },
-  { key: "pink", bg: "bg-pink-300", ring: "ring-pink-400", text: "text-pink-700" },
-  { key: "white", bg: "bg-white", ring: "ring-gray-300", text: "text-gray-400" },
-  { key: "black", bg: "bg-gray-800", ring: "ring-gray-900", text: "text-gray-100" },
+  { key: "red", hex: "#EF4444", text: "#7f1d1d" },
+  { key: "orange", hex: "#FB923C", text: "#9a3412" },
+  { key: "yellow", hex: "#FCD34D", text: "#92400e" },
+  { key: "yellowgreen", hex: "#BEF264", text: "#3f6212" },
+  { key: "green", hex: "#57D966", text: "#14532d" },
+  { key: "mint", hex: "#5EEAD4", text: "#115e59" },
+  { key: "skyblue", hex: "#7DD3FC", text: "#075985" },
+  { key: "blue", hex: "#3B82F6", text: "#1e3a8a" },
+  { key: "purplelight", hex: "#DDD6FE", text: "#5b21b6" },
+  { key: "purpledark", hex: "#A78BFA", text: "#4c1d95" },
+  { key: "pinklight", hex: "#FBCFE8", text: "#9d174d" },
+  { key: "pinkdark", hex: "#F472B6", text: "#831843" },
+  { key: "white", hex: "#FFFFFF", text: "#9ca3af" },
+  { key: "black", hex: "#374151", text: "#f3f4f6" },
 ];
-const colorOf = (key) => COLORS.find((c) => c.key === key) || COLORS[6];
-
-const SYMBOLS = [
-  { key: "star", Icon: Star }, { key: "heart", Icon: Heart }, { key: "sparkles", Icon: Sparkles },
-  { key: "moon", Icon: Moon }, { key: "sun", Icon: Sun }, { key: "leaf", Icon: Leaf },
-  { key: "flame", Icon: Flame }, { key: "drop", Icon: Droplet }, { key: "crown", Icon: Crown },
-  { key: "music", Icon: Music }, { key: "camera", Icon: Camera }, { key: "bird", Icon: Bird },
-];
-const symbolOf = (key) => (SYMBOLS.find((s) => s.key === key) || SYMBOLS[0]).Icon;
+// 旧カラー名（紫・ピンク）は、統合後の色に自動で読み替える
+const LEGACY_COLOR_ALIAS = { purple: "purpledark", pink: "pinkdark" };
+const colorOf = (key) => COLORS.find((c) => c.key === (LEGACY_COLOR_ALIAS[key] || key)) || COLORS[7];
 
 const CHAR_LIMIT = 280;
-const MAX_MEMBER_SLOTS = 10;
 
-const DEFAULT_TEMPLATE = `{名前一覧}
-{グループ一覧}
-{個人タグ一覧}
-{グループタグ一覧}
+const DEFAULT_TEMPLATE = `#{名前一覧}
+#{グループ一覧}
+#{個人タグ一覧}
+#{グループタグ一覧}
 {日付} {イベント名}
 🎪{会場}
 {レギュレーション}`;
 
 const SINGLE_PLACEHOLDERS = ["グループ", "グループタグ", "名前", "個人タグ", "Xアカウント", "日付", "イベント名", "会場", "レギュレーション"];
-const MULTI_PLACEHOLDERS = ["グループ一覧", "グループタグ一覧", "名前一覧", "個人タグ一覧"];
+const MULTI_PLACEHOLDERS = ["グループ一覧", "グループタグ一覧", "名前一覧", "Xアカ一覧", "名前一覧・繋", "個人タグ一覧", "レギュレーション一覧"];
+// この一覧に含まれるプレースホルダーが1行の中にあると、その行を項目数ぶん展開する（各行の#などの文字も一緒に繰り返される）
+const LIST_PLACEHOLDER_KEYS = ["名前一覧", "Xアカ一覧", "個人タグ一覧", "グループタグ一覧", "グループ一覧", "レギュレーション一覧"];
 
 function dedupedNonEmpty(arr) {
   const seen = new Set();
@@ -64,13 +62,33 @@ function formatDate(iso) {
   return `${d.getFullYear()}.${String(d.getMonth() + 1).padStart(2, "0")}.${String(d.getDate()).padStart(2, "0")}`;
 }
 
-function buildText(template, values) {
-  let result = template;
-  for (const [key, value] of Object.entries(values)) {
-    result = result.split(`{${key}}`).join(value);
+// values: {プレースホルダー名: 文字列}（1行1回だけ置き換える単純な項目）
+// listValues: {プレースホルダー名: 文字列の配列}（行の中にあると、その行が項目数ぶん展開される）
+function buildText(template, values, listValues = {}) {
+  const outputLines = [];
+  for (const rawLine of template.split("\n")) {
+    const usedListKeys = LIST_PLACEHOLDER_KEYS.filter((k) => rawLine.includes(`{${k}}`) && listValues[k]);
+    if (usedListKeys.length > 0) {
+      const count = Math.max(...usedListKeys.map((k) => listValues[k].length));
+      for (let i = 0; i < count; i++) {
+        let line = rawLine;
+        for (const k of usedListKeys) {
+          line = line.split(`{${k}}`).join(listValues[k][i] ?? "");
+        }
+        for (const [key, value] of Object.entries(values)) {
+          line = line.split(`{${key}}`).join(value);
+        }
+        outputLines.push(line);
+      }
+    } else {
+      let line = rawLine;
+      for (const [key, value] of Object.entries(values)) {
+        line = line.split(`{${key}}`).join(value);
+      }
+      outputLines.push(line);
+    }
   }
-  return result
-    .split("\n")
+  return outputLines
     .filter((line) => line.replace(/🎪/g, "").trim().length > 0)
     .join("\n");
 }
@@ -101,13 +119,25 @@ function saveLocal(key, value) {
 
 async function loadShared(key, fallback) {
   if (!supabase) return loadLocal(key, fallback);
-  const { data, error } = await supabase.from("shared_data").select("value").eq("key", key).maybeSingle();
-  if (error || !data) return fallback;
-  return data.value ?? fallback;
+  try {
+    const { data, error } = await supabase.from("shared_data").select("value").eq("key", key).maybeSingle();
+    if (error) throw error;
+    const value = data ? (data.value ?? fallback) : fallback;
+    saveLocal(`cache:${key}`, value); // オフライン時のために手元にもミラーしておく
+    return value;
+  } catch {
+    // 通信できない場合は、直前にキャッシュしておいた内容を使う
+    return loadLocal(`cache:${key}`, fallback);
+  }
 }
 async function saveShared(key, value) {
-  if (!supabase) { saveLocal(key, value); return; }
-  await supabase.from("shared_data").upsert({ key, value, updated_at: new Date().toISOString() });
+  saveLocal(`cache:${key}`, value); // 通信の成否にかかわらず、常に手元にも保存しておく
+  if (!supabase) return;
+  try {
+    await supabase.from("shared_data").upsert({ key, value, updated_at: new Date().toISOString() });
+  } catch {
+    // オフライン時はここで失敗するが、手元には保存済みなのでオンライン復帰後に再送する
+  }
 }
 
 /* ------------------------------------------------------------------ */
@@ -134,16 +164,15 @@ function CardHeader({ icon: Icon, title, right }) {
   );
 }
 
-function IconBadge({ colorKey, symbolKey, size = 32 }) {
+function IconBadge({ colorKey, colorKey2, size = 32 }) {
   const c = colorOf(colorKey);
-  const Icon = symbolOf(symbolKey);
+  const c2 = colorKey2 ? colorOf(colorKey2) : null;
+  const background = c2 ? `linear-gradient(135deg, ${c.hex} 50%, ${c2.hex} 50%)` : c.hex;
   return (
     <div
-      className={`rounded-full ${c.bg} ring-1 ${c.ring} flex items-center justify-center flex-shrink-0`}
-      style={{ width: size, height: size }}
-    >
-      <Icon size={size * 0.5} className={c.text} strokeWidth={2.2} />
-    </div>
+      className="rounded-full ring-1 ring-black/10 flex-shrink-0"
+      style={{ width: size, height: size, background }}
+    />
   );
 }
 
@@ -196,11 +225,11 @@ function TopBar({ title, onBack }) {
 /* アイコン（色・シンボル）選択                                          */
 /* ------------------------------------------------------------------ */
 
-function IconPicker({ colorKey, symbolKey, onChangeColor, onChangeSymbol }) {
+function IconPicker({ colorKey, colorKey2, onChangeColor, onChangeColor2 }) {
   return (
     <div>
       <p className="text-xs font-bold text-gray-400 mb-2">アイコン</p>
-      <IconBadge colorKey={colorKey} symbolKey={symbolKey} size={48} />
+      <IconBadge colorKey={colorKey} colorKey2={colorKey2} size={48} />
 
       <p className="text-xs text-gray-400 mt-4 mb-1.5">カラー</p>
       <div className="flex flex-wrap gap-2">
@@ -208,24 +237,30 @@ function IconPicker({ colorKey, symbolKey, onChangeColor, onChangeSymbol }) {
           <button
             key={c.key}
             onClick={() => onChangeColor(c.key)}
-            className={`w-7 h-7 rounded-full ${c.bg} ring-1 ring-gray-300 ${colorKey === c.key ? "ring-2 ring-offset-2 ring-indigo-500" : ""}`}
+            style={{ backgroundColor: c.hex }}
+            className={`w-7 h-7 rounded-full ring-1 ring-gray-300 ${colorKey === c.key ? "ring-2 ring-offset-2 ring-indigo-500" : ""}`}
           />
         ))}
       </div>
 
-      <p className="text-xs text-gray-400 mt-4 mb-1.5">シンボル</p>
-      <div className="grid grid-cols-6 gap-2">
-        {SYMBOLS.map((s) => (
+      <p className="text-xs text-gray-400 mt-4 mb-1.5">
+        第2色（任意・2色のメンバーカラーに対応する場合のみ）
+      </p>
+      <div className="flex flex-wrap gap-2">
+        {COLORS.map((c) => (
           <button
-            key={s.key}
-            onClick={() => onChangeSymbol(s.key)}
-            className={`w-9 h-9 rounded-full flex items-center justify-center transition ${
-              symbolKey === s.key ? `${colorOf(colorKey).bg} ${colorOf(colorKey).text}` : "bg-violet-50 text-gray-400"
-            }`}
-          >
-            <s.Icon size={17} />
-          </button>
+            key={c.key}
+            onClick={() => onChangeColor2(c.key)}
+            style={{ backgroundColor: c.hex }}
+            className={`w-7 h-7 rounded-full ring-1 ring-gray-300 ${colorKey2 === c.key ? "ring-2 ring-offset-2 ring-indigo-500" : ""}`}
+          />
         ))}
+        <button
+          onClick={() => onChangeColor2(null)}
+          className={`w-7 h-7 rounded-full bg-white ring-1 ring-gray-300 flex items-center justify-center text-[10px] text-gray-400 ${!colorKey2 ? "ring-2 ring-offset-2 ring-indigo-500" : ""}`}
+        >
+          なし
+        </button>
       </div>
     </div>
   );
@@ -318,7 +353,7 @@ function BulkMemberForm({ onCancel, onSave }) {
 
 
 function emptyMember(groupName = "") {
-  return { id: uid(), groupName, name: "", account: "", personalTag: "", groupTag: "", iconColorName: "blue", iconSymbol: "star" };
+  return { id: uid(), groupName, name: "", account: "", personalTag: "", groupTag: "", iconColorName: "blue", iconColorName2: null, iconSymbol: "star" };
 }
 
 function MemberForm({ initial, onCancel, onSave, onDelete }) {
@@ -335,9 +370,9 @@ function MemberForm({ initial, onCancel, onSave, onDelete }) {
         <TextInput value={m.groupTag} onChange={set("groupTag")} placeholder="グループタグ" />
         <IconPicker
           colorKey={m.iconColorName}
-          symbolKey={m.iconSymbol}
+          colorKey2={m.iconColorName2}
           onChangeColor={(k) => setM((p) => ({ ...p, iconColorName: k }))}
-          onChangeSymbol={(k) => setM((p) => ({ ...p, iconSymbol: k }))}
+          onChangeColor2={(k) => setM((p) => ({ ...p, iconColorName2: k }))}
         />
       </div>
       <div className="flex gap-2 mt-5">
@@ -442,14 +477,17 @@ function OcrIntakeForm({ onCancel, onExtracted }) {
 }
 
 
-function MembersPage({ members, setMembers, groupRegulations, setGroupRegulations, onBack }) {
+function MembersPage({ members, setMembers, groupRegulations, setGroupRegulations, groupReadings, setGroupReadings, groupHidden, setGroupHidden, onBack }) {
   const [openGroup, setOpenGroup] = useState(null);
   const [editing, setEditing] = useState(null); // 'new' | member | null
+  const [showHiddenGroups, setShowHiddenGroups] = useState(false);
 
-  // 撮影レギュレーションは入力のたびに即保存すると同期が追いつかないので、
+  // 撮影レギュレーション・読み方は入力のたびに即保存すると同期が追いつかないので、
   // 入力中はローカルの下書きだけを更新し、少し待ってからまとめて保存する
   const [regulationDraft, setRegulationDraft] = useState("");
   const regulationSaveTimer = useRef(null);
+  const [readingDraft, setReadingDraft] = useState("");
+  const readingSaveTimer = useRef(null);
   const [carryAccount, setCarryAccount] = useState(false);
 
   const openGroupPanel = (g) => {
@@ -460,9 +498,17 @@ function MembersPage({ members, setMembers, groupRegulations, setGroupRegulation
         setGroupRegulations((prev) => ({ ...prev, [openGroup]: regulationDraft }));
       }
     }
+    if (readingSaveTimer.current) {
+      clearTimeout(readingSaveTimer.current);
+      readingSaveTimer.current = null;
+      if (openGroup) {
+        setGroupReadings((prev) => ({ ...prev, [openGroup]: readingDraft }));
+      }
+    }
     const next = openGroup === g ? null : g;
     setOpenGroup(next);
     setRegulationDraft(next ? (groupRegulations[next] || "") : "");
+    setReadingDraft(next ? (groupReadings[next] || "") : "");
   };
 
   const changeRegulationDraft = (g, value) => {
@@ -473,7 +519,27 @@ function MembersPage({ members, setMembers, groupRegulations, setGroupRegulation
     }, 500);
   };
 
-  const groups = useMemo(() => dedupedNonEmpty(members.map((m) => m.groupName)).sort(), [members]);
+  const changeReadingDraft = (g, value) => {
+    setReadingDraft(value);
+    if (readingSaveTimer.current) clearTimeout(readingSaveTimer.current);
+    readingSaveTimer.current = setTimeout(() => {
+      setGroupReadings((prev) => ({ ...prev, [g]: value }));
+    }, 500);
+  };
+
+  const allGroups = useMemo(
+    () =>
+      dedupedNonEmpty(members.map((m) => m.groupName)).sort((a, b) =>
+        (groupReadings[a] || a).localeCompare(groupReadings[b] || b, "ja")
+      ),
+    [members, groupReadings]
+  );
+  const groups = useMemo(() => allGroups.filter((g) => !groupHidden[g]), [allGroups, groupHidden]);
+  const hiddenGroupList = useMemo(() => allGroups.filter((g) => groupHidden[g]), [allGroups, groupHidden]);
+
+  const toggleGroupHidden = (g) => {
+    setGroupHidden((prev) => ({ ...prev, [g]: !prev[g] }));
+  };
 
   const saveMember = (m) => {
     const clean = { ...m };
@@ -593,13 +659,23 @@ function MembersPage({ members, setMembers, groupRegulations, setGroupRegulation
           <Card key={g}>
             <button className="w-full flex items-center justify-between" onClick={() => openGroupPanel(g)}>
               <span className="font-bold text-gray-800">{g}</span>
-              <span className="flex items-center gap-2 text-xs text-gray-400">
+              <span className="flex items-center gap-3 text-xs text-gray-400">
                 {members.filter((m) => m.groupName === g).length}人
+                <Eye
+                  size={16}
+                  className="text-gray-300"
+                  onClick={(e) => { e.stopPropagation(); toggleGroupHidden(g); }}
+                />
                 {openGroup === g ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
               </span>
             </button>
             {openGroup === g && (
               <div className="mt-3 space-y-3">
+                <TextInput
+                  value={readingDraft}
+                  onChange={(v) => changeReadingDraft(g, v)}
+                  placeholder="読み方（ひらがな・カタカナ／並び替えに使用）"
+                />
                 <TextInput
                   value={regulationDraft}
                   onChange={(v) => changeRegulationDraft(g, v)}
@@ -608,7 +684,7 @@ function MembersPage({ members, setMembers, groupRegulations, setGroupRegulation
                 <div className="space-y-2">
                   {members.filter((m) => m.groupName === g).map((m, i, arr) => (
                   <div key={m.id} className="flex items-center gap-2 bg-violet-50 rounded-2xl px-3 py-2">
-                    <IconBadge colorKey={m.iconColorName} symbolKey={m.iconSymbol} size={30} />
+                    <IconBadge colorKey={m.iconColorName} colorKey2={m.iconColorName2} size={30} />
                     <div className="flex-1 min-w-0">
                       <p className="text-sm font-bold text-gray-800 truncate">{m.name}</p>
                       <p className="text-xs text-gray-400 truncate">{m.account}</p>
@@ -635,6 +711,33 @@ function MembersPage({ members, setMembers, groupRegulations, setGroupRegulation
           </Card>
         ))}
       </div>
+
+      {hiddenGroupList.length > 0 && (
+        <div className="mt-4">
+          <button
+            className="flex items-center gap-1.5 text-xs text-gray-400"
+            onClick={() => setShowHiddenGroups((v) => !v)}
+          >
+            {showHiddenGroups ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
+            非表示のグループ（{hiddenGroupList.length}）
+          </button>
+          {showHiddenGroups && (
+            <div className="mt-2 space-y-1.5">
+              {hiddenGroupList.map((g) => (
+                <div key={g} className="flex items-center justify-between bg-white rounded-2xl px-4 py-2.5">
+                  <span className="text-sm text-gray-400">{g}</span>
+                  <button
+                    className="flex items-center gap-1 text-xs font-bold text-indigo-500"
+                    onClick={() => toggleGroupHidden(g)}
+                  >
+                    <EyeOff size={14} />表示に戻す
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }
@@ -718,10 +821,11 @@ function EventsPage({ events, setEvents, onBack }) {
 /* テンプレート管理ページ（チップ挿入・ライブプレビュー付き）              */
 /* ------------------------------------------------------------------ */
 
-function TemplatesPage({ templates, setTemplates, activeId, setActiveId, content, setContent, values, onBack }) {
+function TemplatesPage({ templates, setTemplates, activeId, setActiveId, content, setContent, values, listValues, recordHistory, onBack }) {
   const [renaming, setRenaming] = useState(false);
   const [savingNewName, setSavingNewName] = useState(false);
   const [nameDraft, setNameDraft] = useState("");
+  const [copyFlash, setCopyFlash] = useState(false);
   const taRef = useRef(null);
   const pendingCursor = useRef(null);
 
@@ -744,8 +848,17 @@ function TemplatesPage({ templates, setTemplates, activeId, setActiveId, content
     setContent(next);
   };
 
-  const preview = useMemo(() => buildText(content, values), [content, values]);
+  const preview = useMemo(() => buildText(content, values, listValues), [content, values, listValues]);
   const overLimit = preview.length > CHAR_LIMIT;
+
+  const doCopy = async () => {
+    try { await navigator.clipboard.writeText(preview); setCopyFlash(true); setTimeout(() => setCopyFlash(false), 1500); } catch { /* noop */ }
+    recordHistory(preview);
+  };
+  const doPost = () => {
+    recordHistory(preview);
+    window.open(`https://twitter.com/intent/tweet?text=${encodeURIComponent(preview)}`, "_blank");
+  };
 
   const selectTemplate = (t) => { setActiveId(t.id); setContent(t.content); };
   const startNew = () => { setActiveId(null); setContent(""); };
@@ -821,7 +934,9 @@ function TemplatesPage({ templates, setTemplates, activeId, setActiveId, content
             <button key={k} onClick={() => insert(k)} className="text-[11px] font-bold bg-violet-100 text-violet-700 rounded-full px-2.5 py-1.5">{k}</button>
           ))}
         </div>
-        <p className="text-xs text-gray-400 mb-2">複数人まとめて使う場合（1人ずつ改行して並びます）</p>
+        <p className="text-xs text-gray-400 mb-2">
+          複数人まとめて使う場合（「#」は自動で付きません。1行に複数のタグを書くと、その行が人数分だけ改行して展開されます。例：「#{'{名前一覧}'} ( @{'{Xアカ一覧}'} )」／「・繋」だけは半角スペース区切りの1行のまま）
+        </p>
         <div className="flex flex-wrap gap-1.5 mb-3">
           {MULTI_PLACEHOLDERS.map((k) => (
             <button key={k} onClick={() => insert(k)} className="text-[11px] font-bold bg-teal-100 text-teal-700 rounded-full px-2.5 py-1.5">{k}</button>
@@ -839,9 +954,17 @@ function TemplatesPage({ templates, setTemplates, activeId, setActiveId, content
       <Card className="mb-4">
         <div className="flex items-center gap-1.5 text-xs text-gray-400 mb-2"><Eye size={13} />プレビュー（現在の選択内容で自動更新）</div>
         <div className="bg-violet-50 rounded-2xl p-3 text-sm text-gray-800 whitespace-pre-wrap min-h-[60px]">{preview}</div>
-        <p className={`text-right text-[11px] mt-1.5 ${overLimit ? "text-rose-500" : "text-gray-400"}`}>
+        <p className={`text-right text-[11px] mt-1.5 mb-3 ${overLimit ? "text-rose-500" : "text-gray-400"}`}>
           {preview.length} / {CHAR_LIMIT}文字（{overLimit ? `${preview.length - CHAR_LIMIT}文字オーバー` : `あと${CHAR_LIMIT - preview.length}文字`}）
         </p>
+        <div className="space-y-2">
+          <SoftButton tone="indigo" onClick={doCopy} className="w-full">
+            <Copy size={15} className="inline -mt-0.5 mr-1.5" />{copyFlash ? "コピーしました！" : "コピー"}
+          </SoftButton>
+          <SoftButton tone="indigo" onClick={doPost} className="w-full">
+            <Send size={15} className="inline -mt-0.5 mr-1.5" />Xで投稿
+          </SoftButton>
+        </div>
       </Card>
 
       <div className="flex gap-2">
@@ -899,76 +1022,158 @@ function HistoryPage({ history, setHistory, onBack }) {
 /* ホーム（投稿作成）ページ                                              */
 /* ------------------------------------------------------------------ */
 
-function MemberSlotRow({ slot, members, groupNames, onChangeGroup, onChangeMember, onRemove, removable }) {
+function MemberSlotRow({ slot, members, groupNames, onChangeGroup, onChangeMember, onBulkAddGroup, onDragStart, onDragMove, onDragEnd, isDragging, dragDeltaY, onRemove, removable }) {
   const current = members.find((m) => m.id === slot.memberId);
   const groupMembers = members.filter((m) => m.groupName === slot.groupFilter);
 
   return (
-    <div className="flex items-center gap-2 border-l-2 border-dashed border-indigo-200 pl-3 py-1">
-      <div className="relative">
-        <select
-          value={slot.groupFilter || ""}
-          onChange={(e) => onChangeGroup(e.target.value || null)}
-          className="appearance-none text-sm text-indigo-600 font-bold bg-transparent border-none outline-none max-w-[120px] truncate pr-4"
+    <div
+      className={`border-l-2 border-dashed border-indigo-200 pl-3 py-1 ${isDragging ? "bg-indigo-50 rounded-xl shadow-lg" : ""}`}
+      style={isDragging ? { transform: `translateY(${dragDeltaY}px)`, position: "relative", zIndex: 10 } : undefined}
+    >
+      <div className="flex items-center gap-2">
+        <div
+          onPointerDown={onDragStart}
+          onPointerMove={onDragMove}
+          onPointerUp={onDragEnd}
+          onPointerCancel={onDragEnd}
+          style={{ touchAction: "none" }}
+          className="text-gray-300 cursor-grab active:cursor-grabbing shrink-0"
         >
-          <option value="">グループ</option>
-          {groupNames.map((g) => (
-            <option key={g} value={g}>{g}</option>
-          ))}
-        </select>
-        <ChevronDown size={12} className="pointer-events-none absolute right-0 top-1/2 -translate-y-1/2 text-indigo-400" />
+          <GripVertical size={16} />
+        </div>
+        <div className="relative">
+          <select
+            value={slot.groupFilter || ""}
+            onChange={(e) => onChangeGroup(e.target.value || null)}
+            className="appearance-none text-sm text-indigo-600 font-bold bg-transparent border-none outline-none max-w-[120px] truncate pr-4"
+          >
+            <option value="">グループ</option>
+            {groupNames.map((g) => (
+              <option key={g} value={g}>{g}</option>
+            ))}
+          </select>
+          <ChevronDown size={12} className="pointer-events-none absolute right-0 top-1/2 -translate-y-1/2 text-indigo-400" />
+        </div>
+
+        {slot.groupFilter && (
+          <div className="flex items-center gap-1">
+            {current && <IconBadge colorKey={current.iconColorName} colorKey2={current.iconColorName2} size={18} />}
+            <div className="relative">
+              <select
+                value={slot.memberId || ""}
+                onChange={(e) => onChangeMember(e.target.value || null)}
+                className="appearance-none text-sm text-indigo-600 font-bold bg-transparent border-none outline-none max-w-[110px] truncate pr-4"
+              >
+                <option value="">選択なし</option>
+                {groupMembers.map((m) => (
+                  <option key={m.id} value={m.id}>{m.name}</option>
+                ))}
+              </select>
+              <ChevronDown size={12} className="pointer-events-none absolute right-0 top-1/2 -translate-y-1/2 text-indigo-400" />
+            </div>
+          </div>
+        )}
+
+        <span className="flex-1" />
+        {removable && (
+          <button onClick={onRemove} className="text-gray-300"><X size={16} /></button>
+        )}
       </div>
 
-      {slot.groupFilter && (
-        <div className="flex items-center gap-1">
-          {current && <IconBadge colorKey={current.iconColorName} symbolKey={current.iconSymbol} size={18} />}
-          <div className="relative">
-            <select
-              value={slot.memberId || ""}
-              onChange={(e) => onChangeMember(e.target.value || null)}
-              className="appearance-none text-sm text-indigo-600 font-bold bg-transparent border-none outline-none max-w-[110px] truncate pr-4"
-            >
-              <option value="">選択なし</option>
-              {groupMembers.map((m) => (
-                <option key={m.id} value={m.id}>{m.name}</option>
-              ))}
-            </select>
-            <ChevronDown size={12} className="pointer-events-none absolute right-0 top-1/2 -translate-y-1/2 text-indigo-400" />
-          </div>
-        </div>
-      )}
-
-      <span className="flex-1" />
-      {removable && (
-        <button onClick={onRemove} className="text-gray-300"><X size={16} /></button>
+      {slot.groupFilter && !slot.memberId && groupMembers.length > 0 && (
+        <button
+          onClick={onBulkAddGroup}
+          className="mt-1.5 inline-flex items-center gap-1.5 bg-indigo-50 text-indigo-600 text-xs font-bold rounded-2xl px-3 py-1.5"
+        >
+          <Users size={13} aria-hidden="true" />
+          {slot.groupFilter}全員（{groupMembers.length}人）を追加
+        </button>
       )}
     </div>
   );
 }
 
-function HomePage({ members, events, memberSlots, setMemberSlots, selectedEventId, setSelectedEventId, templates, activeTemplateContent, setActiveTemplateId, activeTemplateId, setActiveTemplateContent, values, recentGroups, touchGroup, onNavigate, recordHistory }) {
+function HomePage({ members, events, memberSlots, setMemberSlots, selectedEventId, setSelectedEventId, templates, activeTemplateContent, setActiveTemplateId, activeTemplateId, setActiveTemplateContent, values, listValues, recentGroups, touchGroup, groupLastEvent, rememberGroupEvent, groupReadings, groupHidden, groupRegulations, setGroupRegulations, onNavigate, recordHistory }) {
   const groupNames = useMemo(() => {
-    const all = dedupedNonEmpty(members.map((m) => m.groupName));
+    const all = dedupedNonEmpty(members.map((m) => m.groupName)).filter((g) => !groupHidden[g]);
     const used = recentGroups.filter((g) => all.includes(g));
-    const rest = all.filter((g) => !used.includes(g)).sort();
+    const rest = all.filter((g) => !used.includes(g)).sort((a, b) => (groupReadings[a] || a).localeCompare(groupReadings[b] || b, "ja"));
     return [...used, ...rest];
-  }, [members, recentGroups]);
+  }, [members, recentGroups, groupReadings, groupHidden]);
   const selectedEvent = events.find((e) => e.id === selectedEventId);
   const [openEvent, setOpenEvent] = useState(false);
   const [copyFlash, setCopyFlash] = useState(false);
 
-  const text = useMemo(() => buildText(activeTemplateContent, values), [activeTemplateContent, values]);
+  // グループごとの撮影レギュレーションを、このプレビュー画面からも編集できるようにする
+  const [regulationDrafts, setRegulationDrafts] = useState({});
+  const regulationTimers = useRef({});
+  const regulationValueFor = (g) =>
+    Object.prototype.hasOwnProperty.call(regulationDrafts, g) ? regulationDrafts[g] : (groupRegulations[g] || "");
+  const changeRegulationDraft = (g, value) => {
+    setRegulationDrafts((prev) => ({ ...prev, [g]: value }));
+    if (regulationTimers.current[g]) clearTimeout(regulationTimers.current[g]);
+    regulationTimers.current[g] = setTimeout(() => {
+      setGroupRegulations((prev) => ({ ...prev, [g]: value }));
+    }, 500);
+  };
+  const selectedGroupsForRegulation = useMemo(
+    () => dedupedNonEmpty(memberSlots.map((s) => s.groupFilter)),
+    [memberSlots]
+  );
+
+  const text = useMemo(() => buildText(activeTemplateContent, values, listValues), [activeTemplateContent, values, listValues]);
   const overLimit = text.length > CHAR_LIMIT;
 
   const updateSlot = (index, patch) => {
     setMemberSlots((prev) => prev.map((s, i) => (i === index ? { ...s, ...patch } : s)));
   };
   const addSlot = () => {
-    if (memberSlots.length >= MAX_MEMBER_SLOTS) return;
     setMemberSlots((prev) => [...prev, { id: uid(), groupFilter: null, memberId: null }]);
   };
   const removeSlot = (index) => setMemberSlots((prev) => prev.filter((_, i) => i !== index));
+
+  // ドラッグ&ドロップでの並び替え（マウス・タッチ共通のPointer Eventsを使用）
+  const ROW_HEIGHT = 42;
+  const [dragState, setDragState] = useState(null); // { index, startY, deltaY, pointerId }
+
+  const handleDragStart = (index, e) => {
+    e.preventDefault();
+    e.currentTarget.setPointerCapture(e.pointerId);
+    setDragState({ index, startY: e.clientY, deltaY: 0, pointerId: e.pointerId });
+  };
+  const handleDragMove = (e) => {
+    setDragState((s) => {
+      if (!s || e.pointerId !== s.pointerId) return s;
+      const deltaY = e.clientY - s.startY;
+      const shift = Math.round(deltaY / ROW_HEIGHT);
+      if (shift !== 0) {
+        const targetIndex = Math.min(Math.max(s.index + shift, 0), memberSlots.length - 1);
+        if (targetIndex !== s.index) {
+          setMemberSlots((prev) => {
+            const next = [...prev];
+            const [moved] = next.splice(s.index, 1);
+            next.splice(targetIndex, 0, moved);
+            return next;
+          });
+          return { ...s, index: targetIndex, startY: s.startY + shift * ROW_HEIGHT, deltaY: deltaY - shift * ROW_HEIGHT };
+        }
+      }
+      return { ...s, deltaY };
+    });
+  };
+  const handleDragEnd = () => setDragState(null);
+
   const resetMemberSelection = () => setMemberSlots([{ id: uid(), groupFilter: null, memberId: null }]);
+  const bulkAddGroup = (index, groupName) => {
+    const groupMembers = members.filter((m) => m.groupName === groupName);
+    if (groupMembers.length === 0) return;
+    setMemberSlots((prev) => {
+      const newSlots = groupMembers.map((m) => ({ id: uid(), groupFilter: m.groupName, memberId: m.id }));
+      return [...prev.slice(0, index), ...newSlots, ...prev.slice(index + 1)];
+    });
+    touchGroup(groupName);
+  };
 
   const doCopy = async () => {
     try { await navigator.clipboard.writeText(text); setCopyFlash(true); setTimeout(() => setCopyFlash(false), 1500); } catch { /* noop */ }
@@ -1010,21 +1215,29 @@ function HomePage({ members, events, memberSlots, setMemberSlots, selectedEventI
                   onChangeGroup={(g) => {
                     updateSlot(i, { groupFilter: g, memberId: null });
                     touchGroup(g);
+                    if (g && Object.prototype.hasOwnProperty.call(groupLastEvent, g)) {
+                      const remembered = groupLastEvent[g];
+                      if (remembered === null || events.some((e) => e.id === remembered)) {
+                        setSelectedEventId(remembered);
+                      }
+                    }
                   }}
                   onChangeMember={(id) => {
                     updateSlot(i, { memberId: id });
                     const m = members.find((mm) => mm.id === id);
                     if (m) touchGroup(m.groupName);
                   }}
+                  onBulkAddGroup={() => bulkAddGroup(i, slot.groupFilter)}
+                  onDragStart={(e) => handleDragStart(i, e)}
+                  onDragMove={handleDragMove}
+                  onDragEnd={handleDragEnd}
+                  isDragging={dragState?.index === i}
+                  dragDeltaY={dragState?.index === i ? dragState.deltaY : 0}
                   onRemove={() => removeSlot(i)}
                 />
               ))}
             </div>
-            {memberSlots.length < MAX_MEMBER_SLOTS ? (
-              <button onClick={addSlot} className="text-xs font-bold text-indigo-500">＋ メンバーを追加</button>
-            ) : (
-              <p className="text-[11px] text-gray-400">最大{MAX_MEMBER_SLOTS}人まで選択できます（Xのタグ付け上限）</p>
-            )}
+            <button onClick={addSlot} className="text-xs font-bold text-indigo-500">＋ メンバーを追加</button>
           </>
         )}
       </Card>
@@ -1045,9 +1258,26 @@ function HomePage({ members, events, memberSlots, setMemberSlots, selectedEventI
             </button>
             {openEvent && (
               <div className="absolute z-10 mt-1 bg-white rounded-2xl shadow-lg py-1.5 min-w-[220px] max-h-56 overflow-auto">
-                <button className="block w-full text-left px-3 py-1.5 text-sm text-gray-400" onClick={() => { setSelectedEventId(null); setOpenEvent(false); }}>選択なし</button>
+                <button
+                  className="block w-full text-left px-3 py-1.5 text-sm text-gray-400"
+                  onClick={() => {
+                    setSelectedEventId(null);
+                    setOpenEvent(false);
+                    const groupsInUse = dedupedNonEmpty(memberSlots.map((s) => s.groupFilter));
+                    groupsInUse.forEach((g) => rememberGroupEvent(g, null));
+                  }}
+                >選択なし</button>
                 {[...events].sort((a, b) => (a.date < b.date ? 1 : -1)).map((e) => (
-                  <button key={e.id} className="block w-full text-left px-3 py-1.5 text-sm text-gray-800" onClick={() => { setSelectedEventId(e.id); setOpenEvent(false); }}>
+                  <button
+                    key={e.id}
+                    className="block w-full text-left px-3 py-1.5 text-sm text-gray-800"
+                    onClick={() => {
+                      setSelectedEventId(e.id);
+                      setOpenEvent(false);
+                      const groupsInUse = dedupedNonEmpty(memberSlots.map((s) => s.groupFilter));
+                      groupsInUse.forEach((g) => rememberGroupEvent(g, e.id));
+                    }}
+                  >
                     {formatDate(e.date)} {e.eventName}
                   </button>
                 ))}
@@ -1075,6 +1305,22 @@ function HomePage({ members, events, memberSlots, setMemberSlots, selectedEventI
               >
                 {t.name}
               </button>
+            ))}
+          </div>
+        )}
+
+        {selectedGroupsForRegulation.length > 0 && (
+          <div className="mb-3 space-y-1.5">
+            {selectedGroupsForRegulation.map((g) => (
+              <div key={g} className="flex items-center gap-2">
+                <span className="text-xs font-bold text-amber-700 w-24 flex-shrink-0 truncate">{g}</span>
+                <input
+                  value={regulationValueFor(g)}
+                  onChange={(e) => changeRegulationDraft(g, e.target.value)}
+                  placeholder="未入力・タップして追加"
+                  className="flex-1 text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-xl px-2.5 py-1.5 outline-none"
+                />
+              </div>
             ))}
           </div>
         )}
@@ -1110,12 +1356,15 @@ export default function App() {
   const [templates, setTemplates] = useState([]);
   const [history, setHistory] = useState([]);
   const [groupRegulations, setGroupRegulationsRaw] = useState({});
+  const [groupReadings, setGroupReadingsRaw] = useState({});
+  const [groupHidden, setGroupHiddenRaw] = useState({});
 
   const [memberSlots, setMemberSlots] = useState([{ id: uid(), groupFilter: null, memberId: null }]);
   const [selectedEventId, setSelectedEventId] = useState(null);
   const [activeTemplateId, setActiveTemplateId] = useState(null);
   const [activeTemplateContent, setActiveTemplateContent] = useState(DEFAULT_TEMPLATE);
   const [recentGroups, setRecentGroups] = useState(() => loadLocal("recentGroups", []));
+  const [groupLastEvent, setGroupLastEvent] = useState(() => loadLocal("groupLastEvent", {}));
 
   // グループを選ぶ・そのグループのメンバーを選ぶ、のどちらかが起きるたびに「使った順」を更新する
   const touchGroup = (groupName) => {
@@ -1127,9 +1376,44 @@ export default function App() {
     });
   };
 
+  // 「このグループでは前回このイベントを使った」という対応を覚えておく（個人用・このブラウザだけ）
+  const rememberGroupEvent = (groupName, eventId) => {
+    if (!groupName) return;
+    setGroupLastEvent((prev) => {
+      if (prev[groupName] === eventId) return prev;
+      const next = { ...prev, [groupName]: eventId };
+      saveLocal("groupLastEvent", next);
+      return next;
+    });
+  };
+
   // 最新のmembersを非同期コールバックからも参照できるようにしておく（他端末の選択状態を復元する際に使う）
   const membersRef = useRef([]);
   useEffect(() => { membersRef.current = members; }, [members]);
+  const eventsRef = useRef([]);
+  useEffect(() => { eventsRef.current = events; }, [events]);
+  const templatesRef = useRef([]);
+  useEffect(() => { templatesRef.current = templates; }, [templates]);
+  const historyRef = useRef([]);
+  useEffect(() => { historyRef.current = history; }, [history]);
+  const groupRegulationsRef = useRef({});
+  useEffect(() => { groupRegulationsRef.current = groupRegulations; }, [groupRegulations]);
+  const groupReadingsRef = useRef({});
+  useEffect(() => { groupReadingsRef.current = groupReadings; }, [groupReadings]);
+  const groupHiddenRef = useRef({});
+  useEffect(() => { groupHiddenRef.current = groupHidden; }, [groupHidden]);
+
+  const [isOnline, setIsOnline] = useState(typeof navigator !== "undefined" ? navigator.onLine : true);
+  useEffect(() => {
+    const goOnline = () => setIsOnline(true);
+    const goOffline = () => setIsOnline(false);
+    window.addEventListener("online", goOnline);
+    window.addEventListener("offline", goOffline);
+    return () => {
+      window.removeEventListener("online", goOnline);
+      window.removeEventListener("offline", goOffline);
+    };
+  }, []);
 
   // 「編集」専用の更新関数。生のsetXと違い、呼ばれた時点で必ずSupabaseへの保存も行う。
   // 読み込み・他端末からの同期(生のsetXを直接呼ぶ場合)では保存が走らないようにするための分離。
@@ -1169,6 +1453,20 @@ export default function App() {
       return next;
     });
   };
+  const setGroupReadings = (updater) => {
+    setGroupReadingsRaw((prev) => {
+      const next = typeof updater === "function" ? updater(prev) : updater;
+      saveShared("groupReadings", next);
+      return next;
+    });
+  };
+  const setGroupHidden = (updater) => {
+    setGroupHiddenRaw((prev) => {
+      const next = typeof updater === "function" ? updater(prev) : updater;
+      saveShared("groupHidden", next);
+      return next;
+    });
+  };
 
   // 選択中の状態（メンバー選択・イベント選択・テンプレート編集内容）を、起動時に一度だけ復元する
   const applySelection = (sel) => {
@@ -1186,13 +1484,15 @@ export default function App() {
   /* 初回読み込み */
   useEffect(() => {
     (async () => {
-      const [m, e, t, h, sel, gr] = await Promise.all([
+      const [m, e, t, h, sel, gr, grd, gh] = await Promise.all([
         loadShared("members", []),
         loadShared("events", []),
         loadShared("templates", []),
         loadShared("postHistory", []),
         loadShared("lastSelection", null),
         loadShared("groupRegulations", {}),
+        loadShared("groupReadings", {}),
+        loadShared("groupHidden", {}),
       ]);
 
       setMembers(m);
@@ -1204,6 +1504,8 @@ export default function App() {
       if (isFreshDefault) saveShared("templates", finalTemplates);
       setHistory(h);
       setGroupRegulationsRaw(gr || {});
+      setGroupReadingsRaw(grd || {});
+      setGroupHiddenRaw(gh || {});
 
       if (sel) {
         applySelection(sel);
@@ -1218,6 +1520,23 @@ export default function App() {
       setLoaded(true);
     })();
   }, []);
+
+  /* オフライン中に行った変更は手元に保存されるだけになるので、
+     通信が回復したタイミングで、今手元にある内容を改めて送り直す（簡易的な再同期） */
+  useEffect(() => {
+    const resync = () => {
+      if (!supabase || !loaded) return;
+      saveShared("members", membersRef.current);
+      saveShared("events", eventsRef.current);
+      saveShared("templates", templatesRef.current);
+      saveShared("postHistory", historyRef.current);
+      saveShared("groupRegulations", groupRegulationsRef.current);
+      saveShared("groupReadings", groupReadingsRef.current);
+      saveShared("groupHidden", groupHiddenRef.current);
+    };
+    window.addEventListener("online", resync);
+    return () => window.removeEventListener("online", resync);
+  }, [loaded]);
 
   /* 他の人が更新したら、リアルタイムで反映する（メンバー・イベント・テンプレート・履歴・選択状態すべて） */
   useEffect(() => {
@@ -1242,6 +1561,9 @@ export default function App() {
               break;
             case "postHistory":
               setHistory(row.value || []);
+              break;
+            case "groupHidden":
+              setGroupHiddenRaw(row.value || {});
               break;
             // groupRegulations（撮影レギュレーション）も、入力中に他端末の反映で
             // 文字が消えたり戻ったりしてしまうのを避けるため、リアルタイム反映はしない。
@@ -1286,21 +1608,33 @@ export default function App() {
   const first = selectedMembers[0];
 
   const values = useMemo(() => ({
-    "グループ": first ? `#${first.groupName}` : "",
+    "グループ": first ? first.groupName : "",
     "名前": first ? first.name : "",
     "Xアカウント": first ? first.account : "",
     "日付": selectedEvent ? formatDate(selectedEvent.date) : "",
     "イベント名": selectedEvent ? selectedEvent.eventName : "",
     "会場": selectedEvent ? selectedEvent.place : "",
-    "個人タグ": first?.personalTag ? `#${first.personalTag}` : "",
-    "グループタグ": first?.groupTag ? `#${first.groupTag}` : "",
+    "個人タグ": first?.personalTag || "",
+    "グループタグ": first?.groupTag || "",
     "レギュレーション": (first && groupRegulations[first.groupName]) || "",
-    "名前一覧": selectedMembers.map((m) => `#${m.name}`).join("\n"),
+    "レギュレーション一覧": dedupedNonEmpty(
+      dedupedNonEmpty(selectedMembers.map((m) => m.groupName)).map((g) => groupRegulations[g] || "")
+    ).join("\n"),
+    "名前一覧・繋": selectedMembers.map((m) => `#${m.name}`).join(" "),
     "メンバータグ一覧": selectedMembers.map((m) => `#${m.name}`).join("\n"), // 旧名称。既存テンプレート互換のため残す
-    "個人タグ一覧": dedupedNonEmpty(selectedMembers.map((m) => m.personalTag)).map((t) => `#${t}`).join("\n"),
-    "グループタグ一覧": dedupedNonEmpty(selectedMembers.map((m) => m.groupTag)).map((t) => `#${t}`).join("\n"),
-    "グループ一覧": dedupedNonEmpty(selectedMembers.map((m) => m.groupName)).map((t) => `#${t}`).join("\n"),
-  }), [first, selectedEvent, selectedMembers]);
+  }), [first, selectedEvent, selectedMembers, groupRegulations]);
+
+  // 行ごとに展開されるリスト系プレースホルダー（「#」などは含めない生の値）
+  const listValues = useMemo(() => ({
+    "名前一覧": selectedMembers.map((m) => m.name),
+    "Xアカ一覧": selectedMembers.map((m) => m.account),
+    "個人タグ一覧": dedupedNonEmpty(selectedMembers.map((m) => m.personalTag)),
+    "グループタグ一覧": dedupedNonEmpty(selectedMembers.map((m) => m.groupTag)),
+    "グループ一覧": dedupedNonEmpty(selectedMembers.map((m) => m.groupName)),
+    "レギュレーション一覧": dedupedNonEmpty(
+      dedupedNonEmpty(selectedMembers.map((m) => m.groupName)).map((g) => groupRegulations[g] || "")
+    ),
+  }), [selectedMembers, groupRegulations]);
 
   const recordHistory = (text) => {
     if (!text.trim()) return;
@@ -1378,6 +1712,12 @@ export default function App() {
           <span className="text-[10px] font-bold text-indigo-400 bg-indigo-100 rounded-full px-2 py-0.5 ml-auto">Web版</span>
         </div>
 
+        {!isOnline && (
+          <p className="text-[11px] text-amber-700 bg-amber-50 rounded-2xl px-3 py-2 mb-3">
+            オフラインです。前回読み込んだ内容を表示しています。新規登録・編集した内容は、通信が回復すると自動で送信されます。
+          </p>
+        )}
+
         {!supabase && (
           <p className="text-[11px] text-rose-600 bg-rose-50 rounded-2xl px-3 py-2 mb-3">
             Supabaseが未設定のため、メンバー情報の共有は無効になっています（このブラウザだけでも一覧管理は使えます）。README.mdの手順に沿って`.env`を設定してください。
@@ -1414,8 +1754,15 @@ export default function App() {
             activeTemplateContent={activeTemplateContent}
             setActiveTemplateContent={setActiveTemplateContent}
             values={values}
+            listValues={listValues}
             recentGroups={recentGroups}
             touchGroup={touchGroup}
+            groupLastEvent={groupLastEvent}
+            rememberGroupEvent={rememberGroupEvent}
+            groupReadings={groupReadings}
+            groupHidden={groupHidden}
+            groupRegulations={groupRegulations}
+            setGroupRegulations={setGroupRegulations}
             onNavigate={setView}
             recordHistory={recordHistory}
           />
@@ -1426,6 +1773,10 @@ export default function App() {
             setMembers={updateMembers}
             groupRegulations={groupRegulations}
             setGroupRegulations={setGroupRegulations}
+            groupReadings={groupReadings}
+            setGroupReadings={setGroupReadings}
+            groupHidden={groupHidden}
+            setGroupHidden={setGroupHidden}
             onBack={() => setView("home")}
           />
         )}
@@ -1439,6 +1790,8 @@ export default function App() {
             content={activeTemplateContent}
             setContent={setActiveTemplateContent}
             values={values}
+            listValues={listValues}
+            recordHistory={recordHistory}
             onBack={() => setView("home")}
           />
         )}
