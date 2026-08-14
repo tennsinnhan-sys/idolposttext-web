@@ -986,7 +986,7 @@ function TemplatesPage({ templates, setTemplates, activeId, setActiveId, content
 /* 履歴ページ                                                           */
 /* ------------------------------------------------------------------ */
 
-function HistoryPage({ history, setHistory, members, groupReadings, onBack }) {
+function HistoryPage({ history, setHistory, members, events, groupReadings, onBack }) {
   const [copiedId, setCopiedId] = useState(null);
   const [groupFilter, setGroupFilter] = useState("");
   const [memberFilter, setMemberFilter] = useState("");
@@ -1004,7 +1004,14 @@ function HistoryPage({ history, setHistory, members, groupReadings, onBack }) {
     () => dedupedNonEmpty(members.filter((m) => !groupFilter || m.groupName === groupFilter).map((m) => m.name)).sort((a, b) => a.localeCompare(b, "ja")),
     [members, groupFilter]
   );
-  const eventNames = useMemo(() => dedupedNonEmpty(history.map((h) => h.eventName)).sort((a, b) => a.localeCompare(b, "ja")), [history]);
+  const eventNames = useMemo(() => {
+    const names = dedupedNonEmpty(history.map((h) => h.eventName));
+    return names.sort((a, b) => {
+      const da = events.find((e) => e.eventName === a)?.date || "";
+      const db = events.find((e) => e.eventName === b)?.date || "";
+      return db.localeCompare(da);
+    });
+  }, [history, events]);
 
   // グループでの絞り込みは「そのグループの現在のメンバー名が、履歴の名前欄に含まれているか」で判定する
   const groupMembersForFilter = useMemo(
@@ -1868,7 +1875,7 @@ export default function App() {
             onBack={() => setView("home")}
           />
         )}
-        {view === "history" && <HistoryPage history={history} setHistory={updateHistory} members={members} groupReadings={groupReadings} onBack={() => setView("home")} />}
+        {view === "history" && <HistoryPage history={history} setHistory={updateHistory} members={members} events={events} groupReadings={groupReadings} onBack={() => setView("home")} />}
       </div>
     </div>
   );
