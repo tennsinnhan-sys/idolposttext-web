@@ -33,16 +33,18 @@ const colorOf = (key) => COLORS.find((c) => c.key === (LEGACY_COLOR_ALIAS[key] |
 
 const CHAR_LIMIT = 280;
 
-const DEFAULT_TEMPLATE = `{名前一覧}
-{グループ一覧}
-{個人タグ一覧}
-{グループタグ一覧}
+const DEFAULT_TEMPLATE = `#{名前一覧}
+#{グループ一覧}
+#{個人タグ一覧}
+#{グループタグ一覧}
 {日付} {イベント名}
 🎪{会場}
 {レギュレーション}`;
 
 const SINGLE_PLACEHOLDERS = ["グループ", "グループタグ", "名前", "個人タグ", "Xアカウント", "日付", "イベント名", "会場", "レギュレーション"];
-const MULTI_PLACEHOLDERS = ["グループ一覧", "グループタグ一覧", "名前一覧", "名前一覧・繋", "個人タグ一覧", "レギュレーション一覧"];
+const MULTI_PLACEHOLDERS = ["グループ一覧", "グループタグ一覧", "名前一覧", "Xアカ一覧", "名前一覧・繋", "個人タグ一覧", "レギュレーション一覧"];
+// この一覧に含まれるプレースホルダーが1行の中にあると、その行を項目数ぶん展開する（各行の#などの文字も一緒に繰り返される）
+const LIST_PLACEHOLDER_KEYS = ["名前一覧", "Xアカ一覧", "個人タグ一覧", "グループタグ一覧", "グループ一覧", "レギュレーション一覧"];
 
 function dedupedNonEmpty(arr) {
   const seen = new Set();
@@ -60,13 +62,33 @@ function formatDate(iso) {
   return `${d.getFullYear()}.${String(d.getMonth() + 1).padStart(2, "0")}.${String(d.getDate()).padStart(2, "0")}`;
 }
 
-function buildText(template, values) {
-  let result = template;
-  for (const [key, value] of Object.entries(values)) {
-    result = result.split(`{${key}}`).join(value);
+// values: {プレースホルダー名: 文字列}（1行1回だけ置き換える単純な項目）
+// listValues: {プレースホルダー名: 文字列の配列}（行の中にあると、その行が項目数ぶん展開される）
+function buildText(template, values, listValues = {}) {
+  const outputLines = [];
+  for (const rawLine of template.split("\n")) {
+    const usedListKeys = LIST_PLACEHOLDER_KEYS.filter((k) => rawLine.includes(`{${k}}`) && listValues[k]);
+    if (usedListKeys.length > 0) {
+      const count = Math.max(...usedListKeys.map((k) => listValues[k].length));
+      for (let i = 0; i < count; i++) {
+        let line = rawLine;
+        for (const k of usedListKeys) {
+          line = line.split(`{${k}}`).join(listValues[k][i] ?? "");
+        }
+        for (const [key, value] of Object.entries(values)) {
+          line = line.split(`{${key}}`).join(value);
+        }
+        outputLines.push(line);
+      }
+    } else {
+      let line = rawLine;
+      for (const [key, value] of Object.entries(values)) {
+        line = line.split(`{${key}}`).join(value);
+      }
+      outputLines.push(line);
+    }
   }
-  return result
-    .split("\n")
+  return outputLines
     .filter((line) => line.replace(/🎪/g, "").trim().length > 0)
     .join("\n");
 }
@@ -799,7 +821,7 @@ function EventsPage({ events, setEvents, onBack }) {
 /* テンプレート管理ページ（チップ挿入・ライブプレビュー付き）              */
 /* ------------------------------------------------------------------ */
 
-function TemplatesPage({ templates, setTemplates, activeId, setActiveId, content, setContent, values, recordHistory, onBack }) {
+function TemplatesPage({ templates, setTemplates, activeId, setActiveId, content, setContent, values, listValues, recordHistory, onBack }) {
   const [renaming, setRenaming] = useState(false);
   const [savingNewName, setSavingNewName] = useState(false);
   const [nameDraft, setNameDraft] = useState("");
@@ -826,7 +848,7 @@ function TemplatesPage({ templates, setTemplates, activeId, setActiveId, content
     setContent(next);
   };
 
-  const preview = useMemo(() => buildText(content, values), [content, values]);
+  const preview = useMemo(() => buildText(content, values, listValues), [content, values, listValues]);
   const overLimit = preview.length > CHAR_LIMIT;
 
   const doCopy = async () => {
@@ -912,7 +934,9 @@ function TemplatesPage({ templates, setTemplates, activeId, setActiveId, content
             <button key={k} onClick={() => insert(k)} className="text-[11px] font-bold bg-violet-100 text-violet-700 rounded-full px-2.5 py-1.5">{k}</button>
           ))}
         </div>
-        <p className="text-xs text-gray-400 mb-2">複数人まとめて使う場合（「・繋」は半角スペース区切り、それ以外は1人ずつ改行）</p>
+        <p className="text-xs text-gray-400 mb-2">
+          複数人まとめて使う場合（「#」は自動で付きません。1行に複数のタグを書くと、その行が人数分だけ改行して展開されます。例：「#{'{名前一覧}'} ( @{'{Xアカ一覧}'} )」／「・繋」だけは半角スペース区切りの1行のまま）
+        </p>
         <div className="flex flex-wrap gap-1.5 mb-3">
           {MULTI_PLACEHOLDERS.map((k) => (
             <button key={k} onClick={() => insert(k)} className="text-[11px] font-bold bg-teal-100 text-teal-700 rounded-full px-2.5 py-1.5">{k}</button>
@@ -962,17 +986,87 @@ function TemplatesPage({ templates, setTemplates, activeId, setActiveId, content
 /* 履歴ページ                                                           */
 /* ------------------------------------------------------------------ */
 
-function HistoryPage({ history, setHistory, onBack }) {
+function HistoryPage({ history, setHistory, members, onBack }) {
   const [copiedId, setCopiedId] = useState(null);
+  const [groupFilter, setGroupFilter] = useState("");
+  const [memberFilter, setMemberFilter] = useState("");
+  const [eventFilter, setEventFilter] = useState("");
+
   const copyAgain = async (h) => {
     try { await navigator.clipboard.writeText(h.text); setCopiedId(h.id); } catch { /* noop */ }
   };
+
+  const groupNames = useMemo(() => dedupedNonEmpty(members.map((m) => m.groupName)).sort((a, b) => a.localeCompare(b, "ja")), [members]);
+  const groupMemberNames = useMemo(
+    () => dedupedNonEmpty(members.filter((m) => !groupFilter || m.groupName === groupFilter).map((m) => m.name)).sort((a, b) => a.localeCompare(b, "ja")),
+    [members, groupFilter]
+  );
+  const eventNames = useMemo(() => dedupedNonEmpty(history.map((h) => h.eventName)).sort((a, b) => a.localeCompare(b, "ja")), [history]);
+
+  // グループでの絞り込みは「そのグループの現在のメンバー名が、履歴の名前欄に含まれているか」で判定する
+  const groupMembersForFilter = useMemo(
+    () => (groupFilter ? dedupedNonEmpty(members.filter((m) => m.groupName === groupFilter).map((m) => m.name)) : []),
+    [members, groupFilter]
+  );
+
+  const filteredHistory = useMemo(() => {
+    return history.filter((h) => {
+      if (eventFilter && h.eventName !== eventFilter) return false;
+      if (memberFilter && !(h.memberName || "").includes(memberFilter)) return false;
+      if (groupFilter && !groupMembersForFilter.some((n) => (h.memberName || "").includes(n))) return false;
+      return true;
+    });
+  }, [history, eventFilter, memberFilter, groupFilter, groupMembersForFilter]);
+
+  const resetFilters = () => { setGroupFilter(""); setMemberFilter(""); setEventFilter(""); };
+  const hasFilter = groupFilter || memberFilter || eventFilter;
+
   return (
     <div>
       <TopBar title="投稿履歴" onBack={onBack} />
+
+      {history.length > 0 && (
+        <>
+          <div className="flex gap-1.5 mb-1.5">
+            <select
+              value={groupFilter}
+              onChange={(e) => { setGroupFilter(e.target.value); setMemberFilter(""); }}
+              className="flex-1 text-xs text-indigo-600 font-bold bg-violet-50 rounded-xl px-2 py-2 text-center outline-none"
+            >
+              <option value="">グループ</option>
+              {groupNames.map((g) => <option key={g} value={g}>{g}</option>)}
+            </select>
+            <select
+              value={memberFilter}
+              onChange={(e) => setMemberFilter(e.target.value)}
+              className="flex-1 text-xs text-indigo-600 font-bold bg-violet-50 rounded-xl px-2 py-2 text-center outline-none"
+            >
+              <option value="">メンバー</option>
+              {groupMemberNames.map((n) => <option key={n} value={n}>{n}</option>)}
+            </select>
+            <select
+              value={eventFilter}
+              onChange={(e) => setEventFilter(e.target.value)}
+              className="flex-1 text-xs text-indigo-600 font-bold bg-violet-50 rounded-xl px-2 py-2 text-center outline-none"
+            >
+              <option value="">イベント</option>
+              {eventNames.map((n) => <option key={n} value={n}>{n}</option>)}
+            </select>
+          </div>
+          {hasFilter && (
+            <div className="text-right mb-3">
+              <button onClick={resetFilters} className="text-xs text-gray-400">絞り込みを解除</button>
+            </div>
+          )}
+        </>
+      )}
+
       {history.length === 0 && <p className="text-sm text-gray-400">まだ投稿履歴はありません</p>}
+      {history.length > 0 && filteredHistory.length === 0 && (
+        <p className="text-sm text-gray-400">条件に合う履歴はありません</p>
+      )}
       <div className="space-y-3">
-        {history.map((h) => (
+        {filteredHistory.map((h) => (
           <Card key={h.id}>
             <div className="flex justify-between text-xs text-gray-400 mb-1.5">
               <span>{new Date(h.date).toLocaleString("ja-JP", { year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" })}</span>
@@ -1070,7 +1164,7 @@ function MemberSlotRow({ slot, members, groupNames, onChangeGroup, onChangeMembe
   );
 }
 
-function HomePage({ members, events, memberSlots, setMemberSlots, selectedEventId, setSelectedEventId, templates, activeTemplateContent, setActiveTemplateId, activeTemplateId, setActiveTemplateContent, values, recentGroups, touchGroup, groupLastEvent, rememberGroupEvent, groupReadings, groupHidden, groupRegulations, setGroupRegulations, onNavigate, recordHistory }) {
+function HomePage({ members, events, memberSlots, setMemberSlots, selectedEventId, setSelectedEventId, templates, activeTemplateContent, setActiveTemplateId, activeTemplateId, setActiveTemplateContent, values, listValues, recentGroups, touchGroup, groupLastEvent, rememberGroupEvent, groupReadings, groupHidden, groupRegulations, setGroupRegulations, onNavigate, recordHistory }) {
   const groupNames = useMemo(() => {
     const all = dedupedNonEmpty(members.map((m) => m.groupName)).filter((g) => !groupHidden[g]);
     const used = recentGroups.filter((g) => all.includes(g));
@@ -1098,7 +1192,7 @@ function HomePage({ members, events, memberSlots, setMemberSlots, selectedEventI
     [memberSlots]
   );
 
-  const text = useMemo(() => buildText(activeTemplateContent, values), [activeTemplateContent, values]);
+  const text = useMemo(() => buildText(activeTemplateContent, values, listValues), [activeTemplateContent, values, listValues]);
   const overLimit = text.length > CHAR_LIMIT;
 
   const updateSlot = (index, patch) => {
@@ -1584,25 +1678,33 @@ export default function App() {
   const first = selectedMembers[0];
 
   const values = useMemo(() => ({
-    "グループ": first ? `#${first.groupName}` : "",
+    "グループ": first ? first.groupName : "",
     "名前": first ? first.name : "",
     "Xアカウント": first ? first.account : "",
     "日付": selectedEvent ? formatDate(selectedEvent.date) : "",
     "イベント名": selectedEvent ? selectedEvent.eventName : "",
     "会場": selectedEvent ? selectedEvent.place : "",
-    "個人タグ": first?.personalTag ? `#${first.personalTag}` : "",
-    "グループタグ": first?.groupTag ? `#${first.groupTag}` : "",
+    "個人タグ": first?.personalTag || "",
+    "グループタグ": first?.groupTag || "",
     "レギュレーション": (first && groupRegulations[first.groupName]) || "",
     "レギュレーション一覧": dedupedNonEmpty(
       dedupedNonEmpty(selectedMembers.map((m) => m.groupName)).map((g) => groupRegulations[g] || "")
     ).join("\n"),
-    "名前一覧": selectedMembers.map((m) => `#${m.name}`).join("\n"),
     "名前一覧・繋": selectedMembers.map((m) => `#${m.name}`).join(" "),
     "メンバータグ一覧": selectedMembers.map((m) => `#${m.name}`).join("\n"), // 旧名称。既存テンプレート互換のため残す
-    "個人タグ一覧": dedupedNonEmpty(selectedMembers.map((m) => m.personalTag)).map((t) => `#${t}`).join("\n"),
-    "グループタグ一覧": dedupedNonEmpty(selectedMembers.map((m) => m.groupTag)).map((t) => `#${t}`).join("\n"),
-    "グループ一覧": dedupedNonEmpty(selectedMembers.map((m) => m.groupName)).map((t) => `#${t}`).join("\n"),
   }), [first, selectedEvent, selectedMembers, groupRegulations]);
+
+  // 行ごとに展開されるリスト系プレースホルダー（「#」などは含めない生の値）
+  const listValues = useMemo(() => ({
+    "名前一覧": selectedMembers.map((m) => m.name),
+    "Xアカ一覧": selectedMembers.map((m) => m.account),
+    "個人タグ一覧": dedupedNonEmpty(selectedMembers.map((m) => m.personalTag)),
+    "グループタグ一覧": dedupedNonEmpty(selectedMembers.map((m) => m.groupTag)),
+    "グループ一覧": dedupedNonEmpty(selectedMembers.map((m) => m.groupName)),
+    "レギュレーション一覧": dedupedNonEmpty(
+      dedupedNonEmpty(selectedMembers.map((m) => m.groupName)).map((g) => groupRegulations[g] || "")
+    ),
+  }), [selectedMembers, groupRegulations]);
 
   const recordHistory = (text) => {
     if (!text.trim()) return;
@@ -1722,6 +1824,7 @@ export default function App() {
             activeTemplateContent={activeTemplateContent}
             setActiveTemplateContent={setActiveTemplateContent}
             values={values}
+            listValues={listValues}
             recentGroups={recentGroups}
             touchGroup={touchGroup}
             groupLastEvent={groupLastEvent}
@@ -1757,11 +1860,12 @@ export default function App() {
             content={activeTemplateContent}
             setContent={setActiveTemplateContent}
             values={values}
+            listValues={listValues}
             recordHistory={recordHistory}
             onBack={() => setView("home")}
           />
         )}
-        {view === "history" && <HistoryPage history={history} setHistory={updateHistory} onBack={() => setView("home")} />}
+        {view === "history" && <HistoryPage history={history} setHistory={updateHistory} members={members} onBack={() => setView("home")} />}
       </div>
     </div>
   );
