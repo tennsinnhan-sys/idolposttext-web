@@ -481,6 +481,7 @@ function MembersPage({ members, setMembers, groupRegulations, setGroupRegulation
   const [openGroup, setOpenGroup] = useState(null);
   const [editing, setEditing] = useState(null); // 'new' | member | null
   const [showHiddenGroups, setShowHiddenGroups] = useState(false);
+  const [colorPickerMemberId, setColorPickerMemberId] = useState(null);
 
   // 撮影レギュレーション・読み方は入力のたびに即保存すると同期が追いつかないので、
   // 入力中はローカルの下書きだけを更新し、少し待ってからまとめて保存する
@@ -549,6 +550,9 @@ function MembersPage({ members, setMembers, groupRegulations, setGroupRegulation
       return exists ? prev.map((x) => (x.id === clean.id ? clean : x)) : [...prev, clean];
     });
     setEditing(null);
+  };
+  const quickSetMemberColor = (memberId, field, colorKey) => {
+    setMembers((prev) => prev.map((x) => (x.id === memberId ? { ...x, [field]: colorKey } : x)));
   };
   const deleteMember = (id) => {
     setMembers((prev) => prev.filter((x) => x.id !== id));
@@ -671,19 +675,55 @@ function MembersPage({ members, setMembers, groupRegulations, setGroupRegulation
           />
           <div className="space-y-2">
             {members.filter((m) => m.groupName === g).map((m, i, arr) => (
-            <div key={m.id} className="flex items-center gap-2 bg-violet-50 rounded-2xl px-3 py-2">
-              <IconBadge colorKey={m.iconColorName} colorKey2={m.iconColorName2} size={30} />
-              <div className="flex-1 min-w-0">
-                <p className="text-sm font-bold text-gray-800 truncate">{m.name}</p>
-                <p className="text-xs text-gray-400 truncate">{m.account}</p>
+            <div key={m.id} className="bg-violet-50 rounded-2xl px-3 py-2">
+              <div className="flex items-center gap-2">
+                <button onClick={() => setColorPickerMemberId((prev) => (prev === m.id ? null : m.id))}>
+                  <IconBadge colorKey={m.iconColorName} colorKey2={m.iconColorName2} size={30} />
+                </button>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-bold text-gray-800 truncate">{m.name}</p>
+                  <p className="text-xs text-gray-400 truncate">{m.account}</p>
+                </div>
+                <button onClick={() => moveMemberInGroup(g, i, -1)} disabled={i === 0} className="text-gray-300 disabled:opacity-30 p-1">
+                  <ChevronUp size={15} />
+                </button>
+                <button onClick={() => moveMemberInGroup(g, i, 1)} disabled={i === arr.length - 1} className="text-gray-300 disabled:opacity-30 p-1">
+                  <ChevronDown size={15} />
+                </button>
+                <button onClick={() => setEditing(m)} className="p-1.5 text-indigo-500"><Pencil size={15} /></button>
               </div>
-              <button onClick={() => moveMemberInGroup(g, i, -1)} disabled={i === 0} className="text-gray-300 disabled:opacity-30 p-1">
-                <ChevronUp size={15} />
-              </button>
-              <button onClick={() => moveMemberInGroup(g, i, 1)} disabled={i === arr.length - 1} className="text-gray-300 disabled:opacity-30 p-1">
-                <ChevronDown size={15} />
-              </button>
-              <button onClick={() => setEditing(m)} className="p-1.5 text-indigo-500"><Pencil size={15} /></button>
+              {colorPickerMemberId === m.id && (
+                <div className="mt-2.5 pt-2.5 border-t border-dashed border-indigo-200">
+                  <p className="text-[10px] text-indigo-400 mb-1.5">1色目</p>
+                  <div className="flex flex-wrap gap-1.5 mb-2.5">
+                    {COLORS.map((c) => (
+                      <button
+                        key={c.key}
+                        onClick={() => quickSetMemberColor(m.id, "iconColorName", c.key)}
+                        style={{ backgroundColor: c.hex }}
+                        className={`w-6 h-6 rounded-full ring-1 ring-gray-300 ${m.iconColorName === c.key ? "ring-2 ring-offset-1 ring-indigo-500" : ""}`}
+                      />
+                    ))}
+                  </div>
+                  <p className="text-[10px] text-indigo-400 mb-1.5">2色目（任意）</p>
+                  <div className="flex flex-wrap gap-1.5">
+                    {COLORS.map((c) => (
+                      <button
+                        key={c.key}
+                        onClick={() => quickSetMemberColor(m.id, "iconColorName2", c.key)}
+                        style={{ backgroundColor: c.hex }}
+                        className={`w-6 h-6 rounded-full ring-1 ring-gray-300 ${m.iconColorName2 === c.key ? "ring-2 ring-offset-1 ring-indigo-500" : ""}`}
+                      />
+                    ))}
+                    <button
+                      onClick={() => quickSetMemberColor(m.id, "iconColorName2", null)}
+                      className={`w-6 h-6 rounded-full bg-white ring-1 ring-gray-300 flex items-center justify-center text-[8px] text-gray-400 ${!m.iconColorName2 ? "ring-2 ring-offset-1 ring-indigo-500" : ""}`}
+                    >
+                      なし
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
             ))}
           </div>
