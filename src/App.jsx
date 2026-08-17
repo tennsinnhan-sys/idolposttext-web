@@ -634,6 +634,71 @@ function MembersPage({ members, setMembers, groupRegulations, setGroupRegulation
     );
   }
 
+  const renderGroupCard = (g, isHidden) => (
+    <Card key={g}>
+      <button className="w-full flex items-center justify-between" onClick={() => openGroupPanel(g)}>
+        <span className={`font-bold ${isHidden ? "text-gray-400" : "text-gray-800"}`}>{g}</span>
+        <span className="flex items-center gap-3 text-xs text-gray-400">
+          {members.filter((m) => m.groupName === g).length}人
+          {isHidden ? (
+            <button
+              className="flex items-center gap-1 font-bold text-indigo-500"
+              onClick={(e) => { e.stopPropagation(); toggleGroupHidden(g); }}
+            >
+              <EyeOff size={16} />表示に戻す
+            </button>
+          ) : (
+            <Eye
+              size={16}
+              className="text-gray-300"
+              onClick={(e) => { e.stopPropagation(); toggleGroupHidden(g); }}
+            />
+          )}
+          {openGroup === g ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
+        </span>
+      </button>
+      {openGroup === g && (
+        <div className="mt-3 space-y-3">
+          <TextInput
+            value={readingDraft}
+            onChange={(v) => changeReadingDraft(g, v)}
+            placeholder="読み方（ひらがな・カタカナ／並び替えに使用）"
+          />
+          <TextInput
+            value={regulationDraft}
+            onChange={(v) => changeRegulationDraft(g, v)}
+            placeholder="撮影レギュレーション（撮影可能 など・グループ共通）"
+          />
+          <div className="space-y-2">
+            {members.filter((m) => m.groupName === g).map((m, i, arr) => (
+            <div key={m.id} className="flex items-center gap-2 bg-violet-50 rounded-2xl px-3 py-2">
+              <IconBadge colorKey={m.iconColorName} colorKey2={m.iconColorName2} size={30} />
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-bold text-gray-800 truncate">{m.name}</p>
+                <p className="text-xs text-gray-400 truncate">{m.account}</p>
+              </div>
+              <button onClick={() => moveMemberInGroup(g, i, -1)} disabled={i === 0} className="text-gray-300 disabled:opacity-30 p-1">
+                <ChevronUp size={15} />
+              </button>
+              <button onClick={() => moveMemberInGroup(g, i, 1)} disabled={i === arr.length - 1} className="text-gray-300 disabled:opacity-30 p-1">
+                <ChevronDown size={15} />
+              </button>
+              <button onClick={() => setEditing(m)} className="p-1.5 text-indigo-500"><Pencil size={15} /></button>
+            </div>
+            ))}
+          </div>
+          <label className="flex items-center gap-1.5 text-xs text-gray-500">
+            <input type="checkbox" checked={carryAccount} onChange={(e) => setCarryAccount(e.target.checked)} />
+            Xアカウントも引き継ぐ
+          </label>
+          <SoftButton tone="lavender" onClick={() => addToGroup(g)} className="w-full">
+            <Plus size={14} className="inline -mt-0.5 mr-1" />{g}に追加
+          </SoftButton>
+        </div>
+      )}
+    </Card>
+  );
+
   return (
     <div>
       <TopBar title="メンバー一覧" onBack={onBack} />
@@ -655,61 +720,7 @@ function MembersPage({ members, setMembers, groupRegulations, setGroupRegulation
       {groups.length === 0 && <p className="text-sm text-gray-400">保存済みメンバーはいません</p>}
 
       <div className="space-y-3">
-        {groups.map((g) => (
-          <Card key={g}>
-            <button className="w-full flex items-center justify-between" onClick={() => openGroupPanel(g)}>
-              <span className="font-bold text-gray-800">{g}</span>
-              <span className="flex items-center gap-3 text-xs text-gray-400">
-                {members.filter((m) => m.groupName === g).length}人
-                <Eye
-                  size={16}
-                  className="text-gray-300"
-                  onClick={(e) => { e.stopPropagation(); toggleGroupHidden(g); }}
-                />
-                {openGroup === g ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
-              </span>
-            </button>
-            {openGroup === g && (
-              <div className="mt-3 space-y-3">
-                <TextInput
-                  value={readingDraft}
-                  onChange={(v) => changeReadingDraft(g, v)}
-                  placeholder="読み方（ひらがな・カタカナ／並び替えに使用）"
-                />
-                <TextInput
-                  value={regulationDraft}
-                  onChange={(v) => changeRegulationDraft(g, v)}
-                  placeholder="撮影レギュレーション（撮影可能 など・グループ共通）"
-                />
-                <div className="space-y-2">
-                  {members.filter((m) => m.groupName === g).map((m, i, arr) => (
-                  <div key={m.id} className="flex items-center gap-2 bg-violet-50 rounded-2xl px-3 py-2">
-                    <IconBadge colorKey={m.iconColorName} colorKey2={m.iconColorName2} size={30} />
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm font-bold text-gray-800 truncate">{m.name}</p>
-                      <p className="text-xs text-gray-400 truncate">{m.account}</p>
-                    </div>
-                    <button onClick={() => moveMemberInGroup(g, i, -1)} disabled={i === 0} className="text-gray-300 disabled:opacity-30 p-1">
-                      <ChevronUp size={15} />
-                    </button>
-                    <button onClick={() => moveMemberInGroup(g, i, 1)} disabled={i === arr.length - 1} className="text-gray-300 disabled:opacity-30 p-1">
-                      <ChevronDown size={15} />
-                    </button>
-                    <button onClick={() => setEditing(m)} className="p-1.5 text-indigo-500"><Pencil size={15} /></button>
-                  </div>
-                  ))}
-                </div>
-                <label className="flex items-center gap-1.5 text-xs text-gray-500">
-                  <input type="checkbox" checked={carryAccount} onChange={(e) => setCarryAccount(e.target.checked)} />
-                  Xアカウントも引き継ぐ
-                </label>
-                <SoftButton tone="lavender" onClick={() => addToGroup(g)} className="w-full">
-                  <Plus size={14} className="inline -mt-0.5 mr-1" />{g}に追加
-                </SoftButton>
-              </div>
-            )}
-          </Card>
-        ))}
+        {groups.map((g) => renderGroupCard(g, false))}
       </div>
 
       {hiddenGroupList.length > 0 && (
@@ -722,18 +733,8 @@ function MembersPage({ members, setMembers, groupRegulations, setGroupRegulation
             非表示のグループ（{hiddenGroupList.length}）
           </button>
           {showHiddenGroups && (
-            <div className="mt-2 space-y-1.5">
-              {hiddenGroupList.map((g) => (
-                <div key={g} className="flex items-center justify-between bg-white rounded-2xl px-4 py-2.5">
-                  <span className="text-sm text-gray-400">{g}</span>
-                  <button
-                    className="flex items-center gap-1 text-xs font-bold text-indigo-500"
-                    onClick={() => toggleGroupHidden(g)}
-                  >
-                    <EyeOff size={14} />表示に戻す
-                  </button>
-                </div>
-              ))}
+            <div className="mt-2 space-y-3">
+              {hiddenGroupList.map((g) => renderGroupCard(g, true))}
             </div>
           )}
         </div>
