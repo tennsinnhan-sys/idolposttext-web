@@ -1249,8 +1249,12 @@ function HomePage({ members, events, memberSlots, setMemberSlots, selectedEventI
   const updateSlot = (index, patch) => {
     setMemberSlots((prev) => prev.map((s, i) => (i === index ? { ...s, ...patch } : s)));
   };
+  const [carryGroupOnAdd, setCarryGroupOnAdd] = useState(false);
   const addSlot = () => {
-    setMemberSlots((prev) => [...prev, { id: uid(), groupFilter: null, memberId: null }]);
+    setMemberSlots((prev) => {
+      const lastGroup = carryGroupOnAdd ? (prev[prev.length - 1]?.groupFilter ?? null) : null;
+      return [...prev, { id: uid(), groupFilter: lastGroup, memberId: null }];
+    });
   };
   const removeSlot = (index) => setMemberSlots((prev) => prev.filter((_, i) => i !== index));
 
@@ -1358,7 +1362,13 @@ function HomePage({ members, events, memberSlots, setMemberSlots, selectedEventI
                 />
               ))}
             </div>
-            <button onClick={addSlot} className="text-xs font-bold text-indigo-500">＋ メンバーを追加</button>
+            <div className="flex items-center justify-between">
+              <button onClick={addSlot} className="text-xs font-bold text-indigo-500">＋ メンバーを追加</button>
+              <label className="flex items-center gap-1.5 text-xs text-gray-500">
+                <input type="checkbox" checked={carryGroupOnAdd} onChange={(e) => setCarryGroupOnAdd(e.target.checked)} />
+                グループを引き継ぐ
+              </label>
+            </div>
           </>
         )}
       </Card>
