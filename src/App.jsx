@@ -1329,6 +1329,37 @@ function HomePage({ members, events, memberSlots, setMemberSlots, selectedEventI
   }, [members, recentGroups, groupReadings, groupHidden]);
   const selectedEvent = events.find((e) => e.id === selectedEventId);
   const [openEvent, setOpenEvent] = useState(false);
+  const [showEventCalendar, setShowEventCalendar] = useState(false);
+  const [eventCalendarMonth, setEventCalendarMonth] = useState(() => {
+    const d = new Date();
+    return { year: d.getFullYear(), month: d.getMonth() };
+  });
+  const [eventCalendarSelectedDay, setEventCalendarSelectedDay] = useState(null);
+
+  const eventDatesSet = useMemo(() => new Set(events.map((e) => e.date)), [events]);
+  const eventsOnSelectedCalendarDay = useMemo(
+    () => (eventCalendarSelectedDay ? events.filter((e) => e.date === eventCalendarSelectedDay) : []),
+    [events, eventCalendarSelectedDay]
+  );
+  const changeEventCalendarMonth = (delta) => {
+    setEventCalendarMonth((m) => {
+      const d = new Date(m.year, m.month + delta, 1);
+      return { year: d.getFullYear(), month: d.getMonth() };
+    });
+  };
+  const eventCalendarCells = useMemo(() => {
+    const { year, month } = eventCalendarMonth;
+    const firstDay = new Date(year, month, 1);
+    const startWeekday = firstDay.getDay();
+    const daysInMonth = new Date(year, month + 1, 0).getDate();
+    const cells = [];
+    for (let i = 0; i < startWeekday; i++) cells.push(null);
+    for (let d = 1; d <= daysInMonth; d++) {
+      const iso = `${year}-${String(month + 1).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
+      cells.push({ day: d, iso });
+    }
+    return cells;
+  }, [eventCalendarMonth]);
   const [copyFlash, setCopyFlash] = useState(false);
 
   // グループごとの撮影レギュレーションを、このプレビュー画面からも編集できるようにする
@@ -1488,38 +1519,108 @@ function HomePage({ members, events, memberSlots, setMemberSlots, selectedEventI
         {events.length === 0 ? (
           <p className="text-sm text-gray-400">保存済みイベントはいません。まずは「一覧を管理」から登録してください。</p>
         ) : (
-          <div className="relative inline-block">
-            <button onClick={() => setOpenEvent((v) => !v)} className="text-sm font-bold text-indigo-600 flex items-center gap-1">
-              {selectedEvent ? `${formatDate(selectedEvent.date)} ${selectedEvent.eventName}` : "選択なし"} <ChevronDown size={13} />
-            </button>
-            {openEvent && (
-              <div className="absolute z-10 mt-1 bg-white rounded-2xl shadow-lg py-1.5 min-w-[220px] max-h-56 overflow-auto">
-                <button
-                  className="block w-full text-left px-3 py-1.5 text-sm text-gray-400"
-                  onClick={() => {
-                    setSelectedEventId(null);
-                    setOpenEvent(false);
-                    const groupsInUse = dedupedNonEmpty(memberSlots.map((s) => s.groupFilter));
-                    groupsInUse.forEach((g) => rememberGroupEvent(g, null));
-                  }}
-                >選択なし</button>
-                {[...events].sort((a, b) => (a.date < b.date ? 1 : -1)).map((e) => (
-                  <button
-                    key={e.id}
-                    className="block w-full text-left px-3 py-1.5 text-sm text-gray-800"
-                    onClick={() => {
-                      setSelectedEventId(e.id);
-                      setOpenEvent(false);
-                      const groupsInUse = dedupedNonEmpty(memberSlots.map((s) => s.groupFilter));
-                      groupsInUse.forEach((g) => rememberGroupEvent(g, e.id));
-                    }}
-                  >
-                    {formatDate(e.date)} {e.eventName}
-                  </button>
-                ))}
+          <>
+            <div className="flex items-center justify-between">
+              <div className="relative inline-block">
+                <button onClick={() => setOpenEvent((v) => !v)} className="text-sm font-bold text-indigo-600 flex items-center gap-1">
+                  {selectedEvent ? `${formatDate(selectedEvent.date)} ${selectedEvent.eventName}` : "選択なし"} <ChevronDown size={13} />
+                </button>
+                {openEvent && (
+                  <div className="absolute z-10 mt-1 bg-white rounded-2xl shadow-lg py-1.5 min-w-[220px] max-h-56 overflow-auto">
+                    <button
+                      className="block w-full text-left px-3 py-1.5 text-sm text-gray-400"
+                      onClick={() => {
+                        setSelectedEventId(null);
+                        setOpenEvent(false);
+                        const groupsInUse = dedupedNonEmpty(memberSlots.map((s) => s.groupFilter));
+                        groupsInUse.forEach((g) => rememberGroupEvent(g, null));
+                      }}
+                    >選択なし</button>
+                    {[...events].sort((a, b) => (a.date < b.date ? 1 : -1)).map((e) => (
+                      <button
+                        key={e.id}
+                        className="block w-full text-left px-3 py-1.5 text-sm text-gray-800"
+                        onClick={() => {
+                          setSelectedEventId(e.id);
+                          setOpenEvent(false);
+                          const groupsInUse = dedupedNonEmpty(memberSlots.map((s) => s.groupFilter));
+                          groupsInUse.forEach((g) => rememberGroupEvent(g, e.id));
+                        }}
+                      >
+                        {formatDate(e.date)} {e.eventName}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+              <button
+                onClick={() => { setShowEventCalendar((v) => !v); setOpenEvent(false); }}
+                className={`w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0 ${showEventCalendar ? "bg-indigo-500 text-white" : "bg-violet-50 text-indigo-500"}`}
+              >
+                <CalendarDays size={14} />
+              </button>
+            </div>
+
+            {showEventCalendar && (
+              <div className="mt-3 pt-3 border-t border-gray-100">
+                <div className="flex items-center justify-between mb-2">
+                  <button onClick={() => changeEventCalendarMonth(-1)} className="text-gray-400"><ChevronLeft size={15} /></button>
+                  <span className="text-xs font-bold text-gray-800">{eventCalendarMonth.year}年{eventCalendarMonth.month + 1}月</span>
+                  <button onClick={() => changeEventCalendarMonth(1)} className="text-gray-400"><ChevronRight size={15} /></button>
+                </div>
+                <div className="grid grid-cols-7 text-center text-[10px] text-gray-400 mb-1">
+                  {["日", "月", "火", "水", "木", "金", "土"].map((w) => <div key={w}>{w}</div>)}
+                </div>
+                <div className="grid grid-cols-7 gap-y-1.5 text-center text-xs">
+                  {eventCalendarCells.map((cell, i) =>
+                    cell ? (
+                      <button
+                        key={cell.iso}
+                        onClick={() => setEventCalendarSelectedDay(cell.iso)}
+                        className="flex flex-col items-center gap-0.5"
+                      >
+                        <span
+                          className={`w-6 h-6 flex items-center justify-center rounded-full ${
+                            eventCalendarSelectedDay === cell.iso ? "bg-indigo-500 text-white font-bold" : "text-gray-700"
+                          }`}
+                        >
+                          {cell.day}
+                        </span>
+                        <span className={`w-1 h-1 rounded-full ${eventDatesSet.has(cell.iso) ? "bg-indigo-500" : "bg-transparent"}`} />
+                      </button>
+                    ) : (
+                      <div key={`empty-${i}`} />
+                    )
+                  )}
+                </div>
+                {eventCalendarSelectedDay && (
+                  <div className="mt-3">
+                    {eventsOnSelectedCalendarDay.length === 0 ? (
+                      <p className="text-xs text-gray-400">{formatDate(eventCalendarSelectedDay)}のイベントはありません</p>
+                    ) : (
+                      <div className="space-y-1.5">
+                        {eventsOnSelectedCalendarDay.map((e) => (
+                          <button
+                            key={e.id}
+                            onClick={() => {
+                              setSelectedEventId(e.id);
+                              setShowEventCalendar(false);
+                              const groupsInUse = dedupedNonEmpty(memberSlots.map((s) => s.groupFilter));
+                              groupsInUse.forEach((g) => rememberGroupEvent(g, e.id));
+                            }}
+                            className="w-full text-left bg-violet-50 rounded-2xl px-3 py-2"
+                          >
+                            <p className="text-xs font-bold text-indigo-700 truncate">{e.eventName}</p>
+                            {e.place && <p className="text-[11px] text-indigo-300 truncate">{e.place}</p>}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
             )}
-          </div>
+          </>
         )}
       </Card>
 
