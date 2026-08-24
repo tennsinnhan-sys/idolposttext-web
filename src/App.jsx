@@ -816,6 +816,12 @@ function EventForm({ initial, onCancel, onSave, onDelete }) {
 
 function EventsPage({ events, setEvents, onBack }) {
   const [editing, setEditing] = useState(null);
+  const [viewMode, setViewMode] = useState("list"); // 'list' | 'calendar'
+  const [calendarMonth, setCalendarMonth] = useState(() => {
+    const d = new Date();
+    return { year: d.getFullYear(), month: d.getMonth() }; // month: 0-11
+  });
+  const [selectedDay, setSelectedDay] = useState(null); // "YYYY-MM-DD"
   const sorted = useMemo(() => [...events].sort((a, b) => (a.date < b.date ? 1 : -1)), [events]);
 
   const save = (e) => {
@@ -823,6 +829,30 @@ function EventsPage({ events, setEvents, onBack }) {
     setEditing(null);
   };
   const remove = (id) => { setEvents((prev) => prev.filter((x) => x.id !== id)); setEditing(null); };
+
+  const eventDatesSet = useMemo(() => new Set(events.map((e) => e.date)), [events]);
+  const eventsOnDay = useMemo(() => (selectedDay ? events.filter((e) => e.date === selectedDay) : []), [events, selectedDay]);
+
+  const changeMonth = (delta) => {
+    setCalendarMonth((m) => {
+      const d = new Date(m.year, m.month + delta, 1);
+      return { year: d.getFullYear(), month: d.getMonth() };
+    });
+  };
+
+  const calendarCells = useMemo(() => {
+    const { year, month } = calendarMonth;
+    const firstDay = new Date(year, month, 1);
+    const startWeekday = firstDay.getDay(); // 0 = 日
+    const daysInMonth = new Date(year, month + 1, 0).getDate();
+    const cells = [];
+    for (let i = 0; i < startWeekday; i++) cells.push(null);
+    for (let d = 1; d <= daysInMonth; d++) {
+      const iso = `${year}-${String(month + 1).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
+      cells.push({ day: d, iso });
+    }
+    return cells;
+  }, [calendarMonth]);
 
   if (editing) {
     return (
@@ -839,21 +869,96 @@ function EventsPage({ events, setEvents, onBack }) {
       <SoftButton tone="indigo" onClick={() => setEditing("new")} className="mb-4">
         <Plus size={15} className="inline -mt-0.5 mr-1" />新規イベント登録
       </SoftButton>
-      {sorted.length === 0 && <p className="text-sm text-gray-400">保存済みイベントはいません</p>}
-      <div className="space-y-2">
-        {sorted.map((e) => (
-          <Card key={e.id} className="!p-4">
-            <button className="w-full flex items-center justify-between text-left" onClick={() => setEditing(e)}>
-              <div className="min-w-0">
-                <p className="text-xs text-indigo-500 font-bold">{formatDate(e.date)}</p>
-                <p className="text-sm font-bold text-gray-800 truncate">{e.eventName}</p>
-                {e.place && <p className="text-xs text-gray-400 truncate">{e.place}</p>}
-              </div>
-              <Pencil size={15} className="text-indigo-400 flex-shrink-0" />
-            </button>
-          </Card>
-        ))}
+
+      <div className="flex bg-violet-50 rounded-2xl p-1 mb-4">
+        <button
+          onClick={() => setViewMode("list")}
+          className={`flex-1 text-center py-1.5 text-xs rounded-xl ${viewMode === "list" ? "bg-white font-bold text-indigo-700 shadow-sm" : "text-indigo-300"}`}
+        >
+          リスト
+        </button>
+        <button
+          onClick={() => setViewMode("calendar")}
+          className={`flex-1 text-center py-1.5 text-xs rounded-xl ${viewMode === "calendar" ? "bg-white font-bold text-indigo-700 shadow-sm" : "text-indigo-300"}`}
+        >
+          カレンダー
+        </button>
       </div>
+
+      {viewMode === "list" ? (
+        <>
+          {sorted.length === 0 && <p className="text-sm text-gray-400">保存済みイベントはいません</p>}
+          <div className="space-y-2">
+            {sorted.map((e) => (
+              <Card key={e.id} className="!p-4">
+                <button className="w-full flex items-center justify-between text-left" onClick={() => setEditing(e)}>
+                  <div className="min-w-0">
+                    <p className="text-xs text-indigo-500 font-bold">{formatDate(e.date)}</p>
+                    <p className="text-sm font-bold text-gray-800 truncate">{e.eventName}</p>
+                    {e.place && <p className="text-xs text-gray-400 truncate">{e.place}</p>}
+                  </div>
+                  <Pencil size={15} className="text-indigo-400 flex-shrink-0" />
+                </button>
+              </Card>
+            ))}
+          </div>
+        </>
+      ) : (
+        <Card>
+          <div className="flex items-center justify-between mb-3">
+            <button onClick={() => changeMonth(-1)} className="text-gray-400"><ChevronLeft size={16} /></button>
+            <span className="text-sm font-bold text-gray-800">{calendarMonth.year}年{calendarMonth.month + 1}月</span>
+            <button onClick={() => changeMonth(1)} className="text-gray-400"><ChevronRight size={16} /></button>
+          </div>
+          <div className="grid grid-cols-7 text-center text-[10px] text-gray-400 mb-1">
+            {["日", "月", "火", "水", "木", "金", "土"].map((w) => <div key={w}>{w}</div>)}
+          </div>
+          <div className="grid grid-cols-7 gap-y-1.5 text-center text-xs">
+            {calendarCells.map((cell, i) =>
+              cell ? (
+                <button
+                  key={cell.iso}
+                  onClick={() => setSelectedDay(cell.iso)}
+                  className="flex flex-col items-center gap-0.5"
+                >
+                  <span
+                    className={`w-6 h-6 flex items-center justify-center rounded-full ${
+                      selectedDay === cell.iso ? "bg-indigo-500 text-white font-bold" : "text-gray-700"
+                    }`}
+                  >
+                    {cell.day}
+                  </span>
+                  <span className={`w-1 h-1 rounded-full ${eventDatesSet.has(cell.iso) ? "bg-indigo-500" : "bg-transparent"}`} />
+                </button>
+              ) : (
+                <div key={`empty-${i}`} />
+              )
+            )}
+          </div>
+
+          {selectedDay && (
+            <div className="mt-4 pt-3 border-t border-gray-100">
+              <p className="text-xs text-gray-400 mb-2">{formatDate(selectedDay)}のイベント</p>
+              {eventsOnDay.length === 0 ? (
+                <p className="text-xs text-gray-400">この日のイベントはありません</p>
+              ) : (
+                <div className="space-y-2">
+                  {eventsOnDay.map((e) => (
+                    <button
+                      key={e.id}
+                      onClick={() => setEditing(e)}
+                      className="w-full text-left bg-violet-50 rounded-2xl px-3 py-2.5"
+                    >
+                      <p className="text-sm font-bold text-indigo-700 truncate">{e.eventName}</p>
+                      {e.place && <p className="text-xs text-indigo-300 truncate">{e.place}</p>}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+        </Card>
+      )}
     </div>
   );
 }
