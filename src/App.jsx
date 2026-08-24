@@ -93,12 +93,12 @@ function buildText(template, values, listValues = {}) {
     .join("\n");
 }
 
-import { supabase } from "./supabaseClient";
+import { apiConfigured, apiLoad, apiSave } from "./apiClient";
 
 /* ------------------------------------------------------------------ */
 /* 永続化                                                               */
 /* 個人用データ（イベント・テンプレート・履歴・選択状態）：このブラウザだけに保存 */
-/* 共有データ（メンバー情報）：Supabaseに保存し、全員で共有                */
+/* 共有データ（メンバー情報など）：Cloudflare Worker + D1に保存し、全員で共有   */
 /* ------------------------------------------------------------------ */
 
 function loadLocal(key, fallback) {
@@ -117,14 +117,17 @@ function saveLocal(key, value) {
   }
 }
 
+// 直前に自分でこのキーを保存した時刻を覚えておき、ポーリングで自分の直後の編集を
+// 巻き戻してしまわないようにする（詳しくはリアルタイム同期の説明を参照）
+const lastSavedAt = {};
+
 async function loadShared(key, fallback) {
-  if (!supabase) return loadLocal(key, fallback);
+  if (!apiConfigured) return loadLocal(key, fallback);
   try {
-    const { data, error } = await supabase.from("shared_data").select("value").eq("key", key).maybeSingle();
-    if (error) throw error;
-    const value = data ? (data.value ?? fallback) : fallback;
-    saveLocal(`cache:${key}`, value); // オフライン時のために手元にもミラーしておく
-    return value;
+    const value = await apiLoad(key);
+    const result = value ?? fallback;
+    saveLocal(`cache:${key}`, result); // オフライン時のために手元にもミラーしておく
+    return result;
   } catch {
     // 通信できない場合は、直前にキャッシュしておいた内容を使う
     return loadLocal(`cache:${key}`, fallback);
@@ -132,9 +135,10 @@ async function loadShared(key, fallback) {
 }
 async function saveShared(key, value) {
   saveLocal(`cache:${key}`, value); // 通信の成否にかかわらず、常に手元にも保存しておく
-  if (!supabase) return;
+  lastSavedAt[key] = Date.now();
+  if (!apiConfigured) return;
   try {
-    await supabase.from("shared_data").upsert({ key, value, updated_at: new Date().toISOString() });
+    await apiSave(key, value);
   } catch {
     // オフライン時はここで失敗するが、手元には保存済みなのでオンライン復帰後に再送する
   }
@@ -1862,7 +1866,7 @@ export default function App() {
      通信が回復したタイミングで、今手元にある内容を改めて送り直す（簡易的な再同期） */
   useEffect(() => {
     const resync = () => {
-      if (!supabase || !loaded) return;
+      if (!apiConfigured || !loaded) return;
       saveShared("members", membersRef.current);
       saveShared("events", eventsRef.current);
       saveShared("templates", templatesRef.current);
@@ -1875,47 +1879,38 @@ export default function App() {
     return () => window.removeEventListener("online", resync);
   }, [loaded]);
 
-  /* 他の人が更新したら、リアルタイムで反映する（メンバー・イベント・テンプレート・履歴・選択状態すべて） */
+  /* 他の人が更新したら反映する（メンバー・イベント・テンプレート・履歴・グループの表示/非表示）。
+     Cloudflare D1にはSupabaseのようなリアルタイム通知が無いため、5秒おきに取得し直すポーリング方式。
+     直前（4秒以内）に自分がそのキーを保存していた場合は、まだ反映が追いついていない
+     古いデータで自分の変更を巻き戻してしまわないよう、そのキーだけ適用をスキップする。
+     groupRegulations・lastSelectionは（入力中に上書きされるのを防ぐため）そもそもここでは扱わない。 */
   useEffect(() => {
-    if (!supabase) return;
-    const channel = supabase
-      .channel("shared_data_all")
-      .on(
-        "postgres_changes",
-        { event: "*", schema: "public", table: "shared_data" },
-        (payload) => {
-          const row = payload.new;
-          if (!row) return;
-          switch (row.key) {
-            case "members":
-              setMembers(row.value || []);
-              break;
-            case "events":
-              setEvents(row.value || []);
-              break;
-            case "templates":
-              setTemplates(row.value && row.value.length ? row.value : [{ id: uid(), name: "デフォルト", content: DEFAULT_TEMPLATE }]);
-              break;
-            case "postHistory":
-              setHistory(row.value || []);
-              break;
-            case "groupHidden":
-              setGroupHiddenRaw(row.value || {});
-              break;
-            // groupRegulations（撮影レギュレーション）も、入力中に他端末の反映で
-            // 文字が消えたり戻ったりしてしまうのを避けるため、リアルタイム反映はしない。
-            // 次にページを開いた時（初回読み込み時）にだけ反映する。
-            // lastSelection（プレビュー・選択中の状態）はあえてリアルタイム反映しない。
-            // 開いている最中に他端末の選択で巻き戻ってしまうのを避けるため、
-            // 次にページを開いた時（初回読み込み時）にだけ反映する。
-            default:
-              break;
-          }
-        }
-      )
-      .subscribe();
-    return () => { supabase.removeChannel(channel); };
-  }, []);
+    if (!apiConfigured) return;
+    const POLL_MS = 5000;
+    const SKIP_IF_SAVED_WITHIN_MS = 4000;
+
+    const poll = async () => {
+      if (!loaded) return;
+      let all;
+      try {
+        all = await apiLoadAll();
+      } catch {
+        return; // オフラインなどで失敗した場合は次回に任せる
+      }
+      const recentlySaved = (key) => Date.now() - (lastSavedAt[key] || 0) < SKIP_IF_SAVED_WITHIN_MS;
+
+      if ("members" in all && !recentlySaved("members")) setMembers(all.members || []);
+      if ("events" in all && !recentlySaved("events")) setEvents(all.events || []);
+      if ("templates" in all && !recentlySaved("templates")) {
+        setTemplates(all.templates && all.templates.length ? all.templates : [{ id: uid(), name: "デフォルト", content: DEFAULT_TEMPLATE }]);
+      }
+      if ("postHistory" in all && !recentlySaved("postHistory")) setHistory(all.postHistory || []);
+      if ("groupHidden" in all && !recentlySaved("groupHidden")) setGroupHiddenRaw(all.groupHidden || {});
+    };
+
+    const interval = setInterval(poll, POLL_MS);
+    return () => clearInterval(interval);
+  }, [loaded]);
 
   /* 選択状態（メンバー選択・イベント選択・テンプレート編集内容）は変更の度に共有保存する。
      テンプレート編集は1文字ごとに変わるので、少し待ってからまとめて保存する（デバウンス）。
@@ -2055,9 +2050,9 @@ export default function App() {
           </p>
         )}
 
-        {!supabase && (
+        {!apiConfigured && (
           <p className="text-[11px] text-rose-600 bg-rose-50 rounded-2xl px-3 py-2 mb-3">
-            Supabaseが未設定のため、メンバー情報の共有は無効になっています（このブラウザだけでも一覧管理は使えます）。README.mdの手順に沿って`.env`を設定してください。
+            APIサーバーが未設定のため、メンバー情報などの共有は無効になっています（このブラウザだけでも一覧管理は使えます）。README.mdの手順に沿って`.env`を設定してください。
           </p>
         )}
 
