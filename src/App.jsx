@@ -41,7 +41,7 @@ const DEFAULT_TEMPLATE = `#{名前一覧}
 🎪{会場}
 {レギュレーション}`;
 
-const SINGLE_PLACEHOLDERS = ["グループ", "グループタグ", "名前", "個人タグ", "Xアカウント", "日付", "イベント名", "会場", "レギュレーション"];
+const SINGLE_PLACEHOLDERS = ["グループ", "グループタグ", "公式X", "名前", "個人タグ", "Xアカウント", "日付", "イベント名", "会場", "レギュレーション"];
 const MULTI_PLACEHOLDERS = ["グループ一覧", "グループタグ一覧", "名前一覧", "Xアカ一覧", "名前一覧・繋", "個人タグ一覧", "レギュレーション一覧"];
 // この一覧に含まれるプレースホルダーが1行の中にあると、その行を項目数ぶん展開する（各行の#などの文字も一緒に繰り返される）
 const LIST_PLACEHOLDER_KEYS = ["名前一覧", "Xアカ一覧", "個人タグ一覧", "グループタグ一覧", "グループ一覧", "レギュレーション一覧"];
@@ -481,18 +481,20 @@ function OcrIntakeForm({ onCancel, onExtracted }) {
 }
 
 
-function MembersPage({ members, setMembers, groupRegulations, setGroupRegulations, groupReadings, setGroupReadings, groupHidden, setGroupHidden, onBack }) {
+function MembersPage({ members, setMembers, groupRegulations, setGroupRegulations, groupReadings, setGroupReadings, groupOfficialX, setGroupOfficialX, groupHidden, setGroupHidden, onBack }) {
   const [openGroup, setOpenGroup] = useState(null);
   const [editing, setEditing] = useState(null); // 'new' | member | null
   const [showHiddenGroups, setShowHiddenGroups] = useState(false);
   const [colorPickerMemberId, setColorPickerMemberId] = useState(null);
 
-  // 撮影レギュレーション・読み方は入力のたびに即保存すると同期が追いつかないので、
+  // 撮影レギュレーション・読み方・公式Xは入力のたびに即保存すると同期が追いつかないので、
   // 入力中はローカルの下書きだけを更新し、少し待ってからまとめて保存する
   const [regulationDraft, setRegulationDraft] = useState("");
   const regulationSaveTimer = useRef(null);
   const [readingDraft, setReadingDraft] = useState("");
   const readingSaveTimer = useRef(null);
+  const [officialXDraft, setOfficialXDraft] = useState("");
+  const officialXSaveTimer = useRef(null);
   const [carryAccount, setCarryAccount] = useState(false);
 
   const openGroupPanel = (g) => {
@@ -510,10 +512,18 @@ function MembersPage({ members, setMembers, groupRegulations, setGroupRegulation
         setGroupReadings((prev) => ({ ...prev, [openGroup]: readingDraft }));
       }
     }
+    if (officialXSaveTimer.current) {
+      clearTimeout(officialXSaveTimer.current);
+      officialXSaveTimer.current = null;
+      if (openGroup) {
+        setGroupOfficialX((prev) => ({ ...prev, [openGroup]: officialXDraft }));
+      }
+    }
     const next = openGroup === g ? null : g;
     setOpenGroup(next);
     setRegulationDraft(next ? (groupRegulations[next] || "") : "");
     setReadingDraft(next ? (groupReadings[next] || "") : "");
+    setOfficialXDraft(next ? (groupOfficialX[next] || "") : "");
   };
 
   const changeRegulationDraft = (g, value) => {
@@ -529,6 +539,14 @@ function MembersPage({ members, setMembers, groupRegulations, setGroupRegulation
     if (readingSaveTimer.current) clearTimeout(readingSaveTimer.current);
     readingSaveTimer.current = setTimeout(() => {
       setGroupReadings((prev) => ({ ...prev, [g]: value }));
+    }, 500);
+  };
+
+  const changeOfficialXDraft = (g, value) => {
+    setOfficialXDraft(value);
+    if (officialXSaveTimer.current) clearTimeout(officialXSaveTimer.current);
+    officialXSaveTimer.current = setTimeout(() => {
+      setGroupOfficialX((prev) => ({ ...prev, [g]: value }));
     }, 500);
   };
 
@@ -671,6 +689,11 @@ function MembersPage({ members, setMembers, groupRegulations, setGroupRegulation
             value={readingDraft}
             onChange={(v) => changeReadingDraft(g, v)}
             placeholder="読み方（ひらがな・カタカナ／並び替えに使用）"
+          />
+          <TextInput
+            value={officialXDraft}
+            onChange={(v) => changeOfficialXDraft(g, v)}
+            placeholder="グループ公式Xアカウント（@なし）"
           />
           <TextInput
             value={regulationDraft}
@@ -1698,6 +1721,7 @@ export default function App() {
   const [history, setHistory] = useState([]);
   const [groupRegulations, setGroupRegulationsRaw] = useState({});
   const [groupReadings, setGroupReadingsRaw] = useState({});
+  const [groupOfficialX, setGroupOfficialXRaw] = useState({});
   const [groupHidden, setGroupHiddenRaw] = useState({});
 
   const [memberSlots, setMemberSlots] = useState([{ id: uid(), groupFilter: null, memberId: null }]);
@@ -1741,6 +1765,8 @@ export default function App() {
   useEffect(() => { groupRegulationsRef.current = groupRegulations; }, [groupRegulations]);
   const groupReadingsRef = useRef({});
   useEffect(() => { groupReadingsRef.current = groupReadings; }, [groupReadings]);
+  const groupOfficialXRef = useRef({});
+  useEffect(() => { groupOfficialXRef.current = groupOfficialX; }, [groupOfficialX]);
   const groupHiddenRef = useRef({});
   useEffect(() => { groupHiddenRef.current = groupHidden; }, [groupHidden]);
 
@@ -1801,6 +1827,13 @@ export default function App() {
       return next;
     });
   };
+  const setGroupOfficialX = (updater) => {
+    setGroupOfficialXRaw((prev) => {
+      const next = typeof updater === "function" ? updater(prev) : updater;
+      saveShared("groupOfficialX", next);
+      return next;
+    });
+  };
   const setGroupHidden = (updater) => {
     setGroupHiddenRaw((prev) => {
       const next = typeof updater === "function" ? updater(prev) : updater;
@@ -1825,7 +1858,7 @@ export default function App() {
   /* 初回読み込み */
   useEffect(() => {
     (async () => {
-      const [m, e, t, h, sel, gr, grd, gh] = await Promise.all([
+      const [m, e, t, h, sel, gr, grd, gox, gh] = await Promise.all([
         loadShared("members", []),
         loadShared("events", []),
         loadShared("templates", []),
@@ -1833,6 +1866,7 @@ export default function App() {
         loadShared("lastSelection", null),
         loadShared("groupRegulations", {}),
         loadShared("groupReadings", {}),
+        loadShared("groupOfficialX", {}),
         loadShared("groupHidden", {}),
       ]);
 
@@ -1846,6 +1880,7 @@ export default function App() {
       setHistory(h);
       setGroupRegulationsRaw(gr || {});
       setGroupReadingsRaw(grd || {});
+      setGroupOfficialXRaw(gox || {});
       setGroupHiddenRaw(gh || {});
 
       if (sel) {
@@ -1873,6 +1908,7 @@ export default function App() {
       saveShared("postHistory", historyRef.current);
       saveShared("groupRegulations", groupRegulationsRef.current);
       saveShared("groupReadings", groupReadingsRef.current);
+      saveShared("groupOfficialX", groupOfficialXRef.current);
       saveShared("groupHidden", groupHiddenRef.current);
     };
     window.addEventListener("online", resync);
@@ -1948,13 +1984,14 @@ export default function App() {
     "会場": selectedEvent ? selectedEvent.place : "",
     "個人タグ": first?.personalTag || "",
     "グループタグ": first?.groupTag || "",
+    "公式X": (first && groupOfficialX[first.groupName]) || "",
     "レギュレーション": (first && groupRegulations[first.groupName]) || "",
     "レギュレーション一覧": dedupedNonEmpty(
       dedupedNonEmpty(selectedMembers.map((m) => m.groupName)).map((g) => groupRegulations[g] || "")
     ).join("\n"),
     "名前一覧・繋": selectedMembers.map((m) => `#${m.name}`).join(" "),
     "メンバータグ一覧": selectedMembers.map((m) => `#${m.name}`).join("\n"), // 旧名称。既存テンプレート互換のため残す
-  }), [first, selectedEvent, selectedMembers, groupRegulations]);
+  }), [first, selectedEvent, selectedMembers, groupRegulations, groupOfficialX]);
 
   // 行ごとに展開されるリスト系プレースホルダー（「#」などは含めない生の値）
   const listValues = useMemo(() => ({
@@ -2107,6 +2144,8 @@ export default function App() {
             setGroupRegulations={setGroupRegulations}
             groupReadings={groupReadings}
             setGroupReadings={setGroupReadings}
+            groupOfficialX={groupOfficialX}
+            setGroupOfficialX={setGroupOfficialX}
             groupHidden={groupHidden}
             setGroupHidden={setGroupHidden}
             onBack={() => setView("home")}
