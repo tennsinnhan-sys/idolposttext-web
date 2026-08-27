@@ -36,15 +36,15 @@ const CHAR_LIMIT = 280;
 const DEFAULT_TEMPLATE = `#{名前一覧}
 #{グループ一覧}
 #{個人タグ一覧}
-#{グループタグ一覧}
+#{略称一覧}
 {日付} {イベント名}
 🎪{会場}
 {レギュレーション}`;
 
-const SINGLE_PLACEHOLDERS = ["グループ", "グループタグ", "公式X", "名前", "個人タグ", "Xアカウント", "日付", "イベント名", "会場", "レギュレーション"];
-const MULTI_PLACEHOLDERS = ["グループ一覧", "グループタグ一覧", "名前一覧", "Xアカ一覧", "名前一覧・繋", "個人タグ一覧", "レギュレーション一覧"];
+const SINGLE_PLACEHOLDERS = ["グループ", "略称", "公式X", "名前", "個人タグ", "Xアカウント", "日付", "イベント名", "会場", "レギュレーション"];
+const MULTI_PLACEHOLDERS = ["グループ一覧", "略称一覧", "名前一覧", "Xアカ一覧", "名前一覧・繋", "個人タグ一覧", "レギュレーション一覧"];
 // この一覧に含まれるプレースホルダーが1行の中にあると、その行を項目数ぶん展開する（各行の#などの文字も一緒に繰り返される）
-const LIST_PLACEHOLDER_KEYS = ["名前一覧", "Xアカ一覧", "個人タグ一覧", "グループタグ一覧", "グループ一覧", "レギュレーション一覧"];
+const LIST_PLACEHOLDER_KEYS = ["名前一覧", "Xアカ一覧", "個人タグ一覧", "グループ一覧", "レギュレーション一覧", "略称一覧"];
 
 function dedupedNonEmpty(arr) {
   const seen = new Set();
@@ -286,10 +286,9 @@ function BulkMemberForm({ onCancel, onSave }) {
         const parts = line.split(/[,、\t]/).map((p) => p.trim());
         return {
           groupName: parts[0] || "",
-          groupTag: parts[1] || "",
-          name: parts[2] || "",
-          account: parts[3] || "",
-          personalTag: parts[4] || "",
+          name: parts[1] || "",
+          account: parts[2] || "",
+          personalTag: parts[3] || "",
         };
       })
       .filter((p) => p.groupName.length > 0 && p.name.length > 0);
@@ -303,7 +302,6 @@ function BulkMemberForm({ onCancel, onSave }) {
       name: p.name,
       account: p.account,
       personalTag: p.personalTag,
-      groupTag: p.groupTag,
       iconColorName: COLORS[i % COLORS.length].key,
       iconSymbol: "star",
     }));
@@ -315,19 +313,19 @@ function BulkMemberForm({ onCancel, onSave }) {
       <div className="space-y-3">
         <div>
           <p className="text-xs text-gray-400 mb-1.5">
-            1行に1人ずつ、以下の形式で貼り付けてください（グループ名と名前は必須、それ以外は空欄でも可）
+            1行に1人ずつ、以下の形式で貼り付けてください（グループ名と名前は必須、それ以外は空欄でも可）。グループ共通の項目（略称・公式X・レギュレーション・読み方）は、登録後に「メンバー一覧」でグループごとに設定してください。
           </p>
           <p className="text-[11px] text-indigo-500 font-mono mb-1.5">
-            グループ名,グループタグ,名前,Xアカウント,個人タグ
+            グループ名,名前,Xアカウント,個人タグ
           </p>
           <textarea
             value={raw}
             onChange={(e) => setRaw(e.target.value)}
             rows={9}
             placeholder={
-              "ファーストプレイリスト,FP,羽月あい,@example1,あいたぐ\n" +
-              "ファーストプレイリスト,FP,宮脇はる,@example2,はるたぐ\n" +
-              "STAiNY,STAiNY,浜辺千夢,@example3"
+              "ファーストプレイリスト,羽月あい,@example1,あいたぐ\n" +
+              "ファーストプレイリスト,宮脇はる,@example2,はるたぐ\n" +
+              "STAiNY,浜辺千夢,@example3"
             }
             className="w-full rounded-2xl bg-violet-50 focus:bg-white focus:ring-2 ring-indigo-300 outline-none p-3 text-sm text-gray-800 font-mono"
           />
@@ -357,7 +355,7 @@ function BulkMemberForm({ onCancel, onSave }) {
 
 
 function emptyMember(groupName = "") {
-  return { id: uid(), groupName, name: "", account: "", personalTag: "", groupTag: "", iconColorName: "blue", iconColorName2: null, iconSymbol: "star" };
+  return { id: uid(), groupName, name: "", account: "", personalTag: "", iconColorName: "blue", iconColorName2: null, iconSymbol: "star" };
 }
 
 function MemberForm({ initial, onCancel, onSave, onDelete }) {
@@ -371,7 +369,6 @@ function MemberForm({ initial, onCancel, onSave, onDelete }) {
         <TextInput value={m.name} onChange={set("name")} placeholder="名前" />
         <TextInput value={m.account} onChange={set("account")} placeholder="Xアカウント" />
         <TextInput value={m.personalTag} onChange={set("personalTag")} placeholder="個人タグ" />
-        <TextInput value={m.groupTag} onChange={set("groupTag")} placeholder="グループタグ" />
         <IconPicker
           colorKey={m.iconColorName}
           colorKey2={m.iconColorName2}
@@ -481,13 +478,13 @@ function OcrIntakeForm({ onCancel, onExtracted }) {
 }
 
 
-function MembersPage({ members, setMembers, groupRegulations, setGroupRegulations, groupReadings, setGroupReadings, groupOfficialX, setGroupOfficialX, groupHidden, setGroupHidden, onBack }) {
+function MembersPage({ members, setMembers, groupRegulations, setGroupRegulations, groupReadings, setGroupReadings, groupOfficialX, setGroupOfficialX, groupAbbreviation, setGroupAbbreviation, groupHidden, setGroupHidden, onBack }) {
   const [openGroup, setOpenGroup] = useState(null);
   const [editing, setEditing] = useState(null); // 'new' | member | null
   const [showHiddenGroups, setShowHiddenGroups] = useState(false);
   const [colorPickerMemberId, setColorPickerMemberId] = useState(null);
 
-  // 撮影レギュレーション・読み方・公式Xは入力のたびに即保存すると同期が追いつかないので、
+  // 撮影レギュレーション・読み方・公式X・略称は入力のたびに即保存すると同期が追いつかないので、
   // 入力中はローカルの下書きだけを更新し、少し待ってからまとめて保存する
   const [regulationDraft, setRegulationDraft] = useState("");
   const regulationSaveTimer = useRef(null);
@@ -495,6 +492,8 @@ function MembersPage({ members, setMembers, groupRegulations, setGroupRegulation
   const readingSaveTimer = useRef(null);
   const [officialXDraft, setOfficialXDraft] = useState("");
   const officialXSaveTimer = useRef(null);
+  const [abbreviationDraft, setAbbreviationDraft] = useState("");
+  const abbreviationSaveTimer = useRef(null);
   const [carryAccount, setCarryAccount] = useState(false);
 
   const openGroupPanel = (g) => {
@@ -519,11 +518,19 @@ function MembersPage({ members, setMembers, groupRegulations, setGroupRegulation
         setGroupOfficialX((prev) => ({ ...prev, [openGroup]: officialXDraft }));
       }
     }
+    if (abbreviationSaveTimer.current) {
+      clearTimeout(abbreviationSaveTimer.current);
+      abbreviationSaveTimer.current = null;
+      if (openGroup) {
+        setGroupAbbreviation((prev) => ({ ...prev, [openGroup]: abbreviationDraft }));
+      }
+    }
     const next = openGroup === g ? null : g;
     setOpenGroup(next);
     setRegulationDraft(next ? (groupRegulations[next] || "") : "");
     setReadingDraft(next ? (groupReadings[next] || "") : "");
     setOfficialXDraft(next ? (groupOfficialX[next] || "") : "");
+    setAbbreviationDraft(next ? (groupAbbreviation[next] || "") : "");
   };
 
   const changeRegulationDraft = (g, value) => {
@@ -531,6 +538,14 @@ function MembersPage({ members, setMembers, groupRegulations, setGroupRegulation
     if (regulationSaveTimer.current) clearTimeout(regulationSaveTimer.current);
     regulationSaveTimer.current = setTimeout(() => {
       setGroupRegulations((prev) => ({ ...prev, [g]: value }));
+    }, 500);
+  };
+
+  const changeAbbreviationDraft = (g, value) => {
+    setAbbreviationDraft(value);
+    if (abbreviationSaveTimer.current) clearTimeout(abbreviationSaveTimer.current);
+    abbreviationSaveTimer.current = setTimeout(() => {
+      setGroupAbbreviation((prev) => ({ ...prev, [g]: value }));
     }, 500);
   };
 
@@ -593,23 +608,13 @@ function MembersPage({ members, setMembers, groupRegulations, setGroupRegulation
     });
   };
 
-  // そのグループで一番よく使われているグループタグを推定する（表記ゆれがあっても多数派を採用）
-  const mostCommonGroupTag = (groupName) => {
-    const tags = members.filter((m) => m.groupName === groupName && m.groupTag).map((m) => m.groupTag);
-    if (!tags.length) return "";
-    const counts = {};
-    tags.forEach((t) => { counts[t] = (counts[t] || 0) + 1; });
-    return Object.entries(counts).sort((a, b) => b[1] - a[1])[0][0];
-  };
-
-  // 「{グループ}に追加」：グループタグは常に引き継ぎ、Xアカウントはチェックボックスの設定に応じて
+  // 「{グループ}に追加」：Xアカウントはチェックボックスの設定に応じて
   // 直近のメンバーのものを引き継ぐ（名前・個人タグは毎回まっさらにする）
   const addToGroup = (g) => {
     const groupMembers = members.filter((m) => m.groupName === g);
     const lastMember = groupMembers[groupMembers.length - 1];
     setEditing({
       ...emptyMember(g),
-      groupTag: mostCommonGroupTag(g),
       account: carryAccount && lastMember ? lastMember.account : "",
       __new: true,
     });
@@ -689,6 +694,11 @@ function MembersPage({ members, setMembers, groupRegulations, setGroupRegulation
             value={readingDraft}
             onChange={(v) => changeReadingDraft(g, v)}
             placeholder="読み方（ひらがな・カタカナ／並び替えに使用）"
+          />
+          <TextInput
+            value={abbreviationDraft}
+            onChange={(v) => changeAbbreviationDraft(g, v)}
+            placeholder="略称"
           />
           <TextInput
             value={officialXDraft}
@@ -1722,6 +1732,7 @@ export default function App() {
   const [groupRegulations, setGroupRegulationsRaw] = useState({});
   const [groupReadings, setGroupReadingsRaw] = useState({});
   const [groupOfficialX, setGroupOfficialXRaw] = useState({});
+  const [groupAbbreviation, setGroupAbbreviationRaw] = useState({});
   const [groupHidden, setGroupHiddenRaw] = useState({});
 
   const [memberSlots, setMemberSlots] = useState([{ id: uid(), groupFilter: null, memberId: null }]);
@@ -1767,6 +1778,8 @@ export default function App() {
   useEffect(() => { groupReadingsRef.current = groupReadings; }, [groupReadings]);
   const groupOfficialXRef = useRef({});
   useEffect(() => { groupOfficialXRef.current = groupOfficialX; }, [groupOfficialX]);
+  const groupAbbreviationRef = useRef({});
+  useEffect(() => { groupAbbreviationRef.current = groupAbbreviation; }, [groupAbbreviation]);
   const groupHiddenRef = useRef({});
   useEffect(() => { groupHiddenRef.current = groupHidden; }, [groupHidden]);
 
@@ -1834,6 +1847,13 @@ export default function App() {
       return next;
     });
   };
+  const setGroupAbbreviation = (updater) => {
+    setGroupAbbreviationRaw((prev) => {
+      const next = typeof updater === "function" ? updater(prev) : updater;
+      saveShared("groupAbbreviation", next);
+      return next;
+    });
+  };
   const setGroupHidden = (updater) => {
     setGroupHiddenRaw((prev) => {
       const next = typeof updater === "function" ? updater(prev) : updater;
@@ -1858,7 +1878,7 @@ export default function App() {
   /* 初回読み込み */
   useEffect(() => {
     (async () => {
-      const [m, e, t, h, sel, gr, grd, gox, gh] = await Promise.all([
+      const [m, e, t, h, sel, gr, grd, gox, gab, gh] = await Promise.all([
         loadShared("members", []),
         loadShared("events", []),
         loadShared("templates", []),
@@ -1867,6 +1887,7 @@ export default function App() {
         loadShared("groupRegulations", {}),
         loadShared("groupReadings", {}),
         loadShared("groupOfficialX", {}),
+        loadShared("groupAbbreviation", {}),
         loadShared("groupHidden", {}),
       ]);
 
@@ -1881,6 +1902,7 @@ export default function App() {
       setGroupRegulationsRaw(gr || {});
       setGroupReadingsRaw(grd || {});
       setGroupOfficialXRaw(gox || {});
+      setGroupAbbreviationRaw(gab || {});
       setGroupHiddenRaw(gh || {});
 
       if (sel) {
@@ -1909,6 +1931,7 @@ export default function App() {
       saveShared("groupRegulations", groupRegulationsRef.current);
       saveShared("groupReadings", groupReadingsRef.current);
       saveShared("groupOfficialX", groupOfficialXRef.current);
+      saveShared("groupAbbreviation", groupAbbreviationRef.current);
       saveShared("groupHidden", groupHiddenRef.current);
     };
     window.addEventListener("online", resync);
@@ -1983,7 +2006,7 @@ export default function App() {
     "イベント名": selectedEvent ? selectedEvent.eventName : "",
     "会場": selectedEvent ? selectedEvent.place : "",
     "個人タグ": first?.personalTag || "",
-    "グループタグ": first?.groupTag || "",
+    "略称": (first && groupAbbreviation[first.groupName]) || "",
     "公式X": (first && groupOfficialX[first.groupName]) || "",
     "レギュレーション": (first && groupRegulations[first.groupName]) || "",
     "レギュレーション一覧": dedupedNonEmpty(
@@ -1991,19 +2014,21 @@ export default function App() {
     ).join("\n"),
     "名前一覧・繋": selectedMembers.map((m) => `#${m.name}`).join(" "),
     "メンバータグ一覧": selectedMembers.map((m) => `#${m.name}`).join("\n"), // 旧名称。既存テンプレート互換のため残す
-  }), [first, selectedEvent, selectedMembers, groupRegulations, groupOfficialX]);
+  }), [first, selectedEvent, selectedMembers, groupRegulations, groupOfficialX, groupAbbreviation]);
 
   // 行ごとに展開されるリスト系プレースホルダー（「#」などは含めない生の値）
   const listValues = useMemo(() => ({
     "名前一覧": selectedMembers.map((m) => m.name),
     "Xアカ一覧": selectedMembers.map((m) => m.account),
     "個人タグ一覧": dedupedNonEmpty(selectedMembers.map((m) => m.personalTag)),
-    "グループタグ一覧": dedupedNonEmpty(selectedMembers.map((m) => m.groupTag)),
     "グループ一覧": dedupedNonEmpty(selectedMembers.map((m) => m.groupName)),
     "レギュレーション一覧": dedupedNonEmpty(
       dedupedNonEmpty(selectedMembers.map((m) => m.groupName)).map((g) => groupRegulations[g] || "")
     ),
-  }), [selectedMembers, groupRegulations]);
+    "略称一覧": dedupedNonEmpty(
+      dedupedNonEmpty(selectedMembers.map((m) => m.groupName)).map((g) => groupAbbreviation[g] || "")
+    ),
+  }), [selectedMembers, groupRegulations, groupAbbreviation]);
 
   const recordHistory = (text) => {
     if (!text.trim()) return;
@@ -2146,6 +2171,8 @@ export default function App() {
             setGroupReadings={setGroupReadings}
             groupOfficialX={groupOfficialX}
             setGroupOfficialX={setGroupOfficialX}
+            groupAbbreviation={groupAbbreviation}
+            setGroupAbbreviation={setGroupAbbreviation}
             groupHidden={groupHidden}
             setGroupHidden={setGroupHidden}
             onBack={() => setView("home")}
