@@ -579,6 +579,46 @@ function MembersPage({ members, setMembers, groupRegulations, setGroupRegulation
     setGroupHidden((prev) => ({ ...prev, [g]: !prev[g] }));
   };
 
+  // グループ名の一括変更
+  const [renamingGroup, setRenamingGroup] = useState(null);
+  const [renameDraft, setRenameDraft] = useState("");
+  const [renameConfirm, setRenameConfirm] = useState(null); // { oldName, newName }
+
+  const startRenameGroup = (g) => {
+    setRenamingGroup(g);
+    setRenameDraft(g);
+  };
+  const confirmRenameDraft = (g) => {
+    const newName = renameDraft.trim();
+    setRenamingGroup(null);
+    if (!newName || newName === g) return;
+    setRenameConfirm({ oldName: g, newName });
+  };
+
+  const applyGroupRename = (oldName, newName) => {
+    const collision = allGroups.includes(newName) && newName !== oldName;
+    setMembers((prev) => prev.map((m) => (m.groupName === oldName ? { ...m, groupName: newName } : m)));
+
+    const migrate = (setter) => {
+      setter((prev) => {
+        if (!(oldName in prev)) return prev;
+        const next = { ...prev };
+        const val = next[oldName];
+        delete next[oldName];
+        if (!collision) next[newName] = val;
+        return next;
+      });
+    };
+    migrate(setGroupRegulations);
+    migrate(setGroupReadings);
+    migrate(setGroupOfficialX);
+    migrate(setGroupAbbreviation);
+    migrate(setGroupHidden);
+
+    if (openGroup === oldName) setOpenGroup(newName);
+    setRenameConfirm(null);
+  };
+
   const saveMember = (m) => {
     const clean = { ...m };
     delete clean.__new;
@@ -667,27 +707,44 @@ function MembersPage({ members, setMembers, groupRegulations, setGroupRegulation
 
   const renderGroupCard = (g, isHidden) => (
     <Card key={g}>
-      <button className="w-full flex items-center justify-between" onClick={() => openGroupPanel(g)}>
-        <span className={`font-bold ${isHidden ? "text-gray-400" : "text-gray-800"}`}>{g}</span>
-        <span className="flex items-center gap-3 text-xs text-gray-400">
-          {members.filter((m) => m.groupName === g).length}人
-          {isHidden ? (
-            <button
-              className="flex items-center gap-1 font-bold text-indigo-500"
-              onClick={(e) => { e.stopPropagation(); toggleGroupHidden(g); }}
-            >
-              <EyeOff size={16} />表示に戻す
-            </button>
-          ) : (
-            <Eye
-              size={16}
-              className="text-gray-300"
-              onClick={(e) => { e.stopPropagation(); toggleGroupHidden(g); }}
+      {renamingGroup === g ? (
+        <div className="flex items-center gap-2">
+          <TextInput value={renameDraft} onChange={setRenameDraft} placeholder="グループ名" />
+          <button onClick={() => confirmRenameDraft(g)} className="w-8 h-8 rounded-xl bg-indigo-500 text-white flex items-center justify-center flex-shrink-0">
+            <Check size={15} />
+          </button>
+          <button onClick={() => setRenamingGroup(null)} className="w-8 h-8 rounded-xl bg-gray-100 text-gray-400 flex items-center justify-center flex-shrink-0">
+            <X size={15} />
+          </button>
+        </div>
+      ) : (
+        <button className="w-full flex items-center justify-between" onClick={() => openGroupPanel(g)}>
+          <span className={`font-bold ${isHidden ? "text-gray-400" : "text-gray-800"}`}>{g}</span>
+          <span className="flex items-center gap-3 text-xs text-gray-400">
+            {members.filter((m) => m.groupName === g).length}人
+            <Pencil
+              size={15}
+              className="text-indigo-400"
+              onClick={(e) => { e.stopPropagation(); startRenameGroup(g); }}
             />
-          )}
-          {openGroup === g ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
-        </span>
-      </button>
+            {isHidden ? (
+              <button
+                className="flex items-center gap-1 font-bold text-indigo-500"
+                onClick={(e) => { e.stopPropagation(); toggleGroupHidden(g); }}
+              >
+                <EyeOff size={16} />表示に戻す
+              </button>
+            ) : (
+              <Eye
+                size={16}
+                className="text-gray-300"
+                onClick={(e) => { e.stopPropagation(); toggleGroupHidden(g); }}
+              />
+            )}
+            {openGroup === g ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
+          </span>
+        </button>
+      )}
       {openGroup === g && (
         <div className="mt-3 space-y-3">
           <TextInput
@@ -816,10 +873,34 @@ function MembersPage({ members, setMembers, groupRegulations, setGroupRegulation
           )}
         </div>
       )}
+
+      {renameConfirm && (
+        <div className="fixed inset-0 bg-black/30 flex items-center justify-center p-6 z-50">
+          <Card className="max-w-sm w-full">
+            <p className="text-sm font-bold text-gray-800 mb-1.5">グループ名を変更しますか？</p>
+            <p className="text-xs text-gray-500 leading-relaxed mb-4">
+              「{renameConfirm.oldName}」を「{renameConfirm.newName}」に変更します。所属する{members.filter((m) => m.groupName === renameConfirm.oldName).length}人全員と、略称・公式X・レギュレーション・読み方の設定も引き継がれます。
+              {allGroups.includes(renameConfirm.newName) && (
+                <>
+                  <br /><br />
+                  ※「{renameConfirm.newName}」は既に存在するグループです。このグループと統合され、既存の略称などの設定はそちらが優先されます。
+                </>
+              )}
+            </p>
+            <div className="flex gap-2">
+              <SoftButton tone="indigo" onClick={() => applyGroupRename(renameConfirm.oldName, renameConfirm.newName)} className="flex-1">
+                変更する
+              </SoftButton>
+              <SoftButton tone="ghost" onClick={() => setRenameConfirm(null)} className="flex-1">
+                キャンセル
+              </SoftButton>
+            </div>
+          </Card>
+        </div>
+      )}
     </div>
   );
 }
-
 /* ------------------------------------------------------------------ */
 /* イベント管理ページ                                                    */
 /* ------------------------------------------------------------------ */
