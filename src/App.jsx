@@ -1438,7 +1438,7 @@ function MemberSlotRow({ slot, members, groupNames, onChangeGroup, onChangeMembe
   );
 }
 
-function HomePage({ members, events, memberSlots, setMemberSlots, selectedEventId, setSelectedEventId, templates, activeTemplateContent, setActiveTemplateId, activeTemplateId, setActiveTemplateContent, values, listValues, recentGroups, touchGroup, groupLastEvent, rememberGroupEvent, groupReadings, groupHidden, groupRegulations, setGroupRegulations, onNavigate, recordHistory }) {
+function HomePage({ members, events, memberSlots, setMemberSlots, selectedEventId, setSelectedEventId, templates, activeTemplateContent, setActiveTemplateId, activeTemplateId, setActiveTemplateContent, values, listValues, recentGroups, touchGroup, groupLastEvent, rememberGroupEvent, groupReadings, groupHidden, groupRegulations, setGroupRegulations, eventGroupRegulations, setEventGroupRegulations, onNavigate, recordHistory }) {
   const groupNames = useMemo(() => {
     const all = dedupedNonEmpty(members.map((m) => m.groupName)).filter((g) => !groupHidden[g]);
     const used = recentGroups.filter((g) => all.includes(g));
@@ -1480,17 +1480,45 @@ function HomePage({ members, events, memberSlots, setMemberSlots, selectedEventI
   }, [eventCalendarMonth]);
   const [copyFlash, setCopyFlash] = useState(false);
 
-  // グループごとの撮影レギュレーションを、このプレビュー画面からも編集できるようにする
+  // グループごとの撮影レギュレーションを、このプレビュー画面からも編集できるようにする。
+  // イベントを選んでいる時は「そのイベント×そのグループ」だけの上書きとして保存し、
+  // イベント未選択の時はグループの基本レギュレーションとして保存する。
   const [regulationDrafts, setRegulationDrafts] = useState({});
   const regulationTimers = useRef({});
-  const regulationValueFor = (g) =>
-    Object.prototype.hasOwnProperty.call(regulationDrafts, g) ? regulationDrafts[g] : (groupRegulations[g] || "");
+  const regulationValueFor = (g) => {
+    if (Object.prototype.hasOwnProperty.call(regulationDrafts, g)) return regulationDrafts[g];
+    const override = selectedEventId ? eventGroupRegulations[selectedEventId]?.[g] : undefined;
+    if (override !== undefined) return override;
+    return groupRegulations[g] || "";
+  };
+  const isRegulationOverridden = (g) =>
+    !!selectedEventId && eventGroupRegulations[selectedEventId]?.[g] !== undefined;
   const changeRegulationDraft = (g, value) => {
     setRegulationDrafts((prev) => ({ ...prev, [g]: value }));
     if (regulationTimers.current[g]) clearTimeout(regulationTimers.current[g]);
     regulationTimers.current[g] = setTimeout(() => {
-      setGroupRegulations((prev) => ({ ...prev, [g]: value }));
+      if (selectedEventId) {
+        setEventGroupRegulations((prev) => ({
+          ...prev,
+          [selectedEventId]: { ...(prev[selectedEventId] || {}), [g]: value },
+        }));
+      } else {
+        setGroupRegulations((prev) => ({ ...prev, [g]: value }));
+      }
     }, 500);
+  };
+  const clearRegulationOverride = (g) => {
+    if (!selectedEventId) return;
+    setEventGroupRegulations((prev) => {
+      const eventMap = { ...(prev[selectedEventId] || {}) };
+      delete eventMap[g];
+      return { ...prev, [selectedEventId]: eventMap };
+    });
+    setRegulationDrafts((prev) => {
+      const next = { ...prev };
+      delete next[g];
+      return next;
+    });
   };
   const selectedGroupsForRegulation = useMemo(
     () => dedupedNonEmpty(memberSlots.map((s) => s.groupFilter)),
@@ -1767,14 +1795,22 @@ function HomePage({ members, events, memberSlots, setMemberSlots, selectedEventI
         {selectedGroupsForRegulation.length > 0 && (
           <div className="mb-3 space-y-1.5">
             {selectedGroupsForRegulation.map((g) => (
-              <div key={g} className="flex items-center gap-2">
-                <span className="text-xs font-bold text-amber-700 w-24 flex-shrink-0 truncate">{g}</span>
-                <input
-                  value={regulationValueFor(g)}
-                  onChange={(e) => changeRegulationDraft(g, e.target.value)}
-                  placeholder="未入力・タップして追加"
-                  className="flex-1 text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-xl px-2.5 py-1.5 outline-none"
-                />
+              <div key={g}>
+                <div className="flex items-center gap-2">
+                  <span className="text-xs font-bold text-amber-700 w-24 flex-shrink-0 truncate">{g}</span>
+                  <input
+                    value={regulationValueFor(g)}
+                    onChange={(e) => changeRegulationDraft(g, e.target.value)}
+                    placeholder="未入力・タップして追加"
+                    className="flex-1 text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-xl px-2.5 py-1.5 outline-none"
+                  />
+                </div>
+                {isRegulationOverridden(g) && (
+                  <p className="text-[10px] text-amber-500 mt-0.5 ml-[104px] flex items-center gap-2">
+                    このイベント限定の上書きです
+                    <button onClick={() => clearRegulationOverride(g)} className="underline">グループの基本設定に戻す</button>
+                  </p>
+                )}
               </div>
             ))}
           </div>
@@ -1811,6 +1847,7 @@ export default function App() {
   const [templates, setTemplates] = useState([]);
   const [history, setHistory] = useState([]);
   const [groupRegulations, setGroupRegulationsRaw] = useState({});
+  const [eventGroupRegulations, setEventGroupRegulationsRaw] = useState({});
   const [groupReadings, setGroupReadingsRaw] = useState({});
   const [groupOfficialX, setGroupOfficialXRaw] = useState({});
   const [groupAbbreviation, setGroupAbbreviationRaw] = useState({});
@@ -1855,6 +1892,8 @@ export default function App() {
   useEffect(() => { historyRef.current = history; }, [history]);
   const groupRegulationsRef = useRef({});
   useEffect(() => { groupRegulationsRef.current = groupRegulations; }, [groupRegulations]);
+  const eventGroupRegulationsRef = useRef({});
+  useEffect(() => { eventGroupRegulationsRef.current = eventGroupRegulations; }, [eventGroupRegulations]);
   const groupReadingsRef = useRef({});
   useEffect(() => { groupReadingsRef.current = groupReadings; }, [groupReadings]);
   const groupOfficialXRef = useRef({});
@@ -1914,6 +1953,13 @@ export default function App() {
       return next;
     });
   };
+  const setEventGroupRegulations = (updater) => {
+    setEventGroupRegulationsRaw((prev) => {
+      const next = typeof updater === "function" ? updater(prev) : updater;
+      saveShared("eventGroupRegulations", next);
+      return next;
+    });
+  };
   const setGroupReadings = (updater) => {
     setGroupReadingsRaw((prev) => {
       const next = typeof updater === "function" ? updater(prev) : updater;
@@ -1959,13 +2005,14 @@ export default function App() {
   /* 初回読み込み */
   useEffect(() => {
     (async () => {
-      const [m, e, t, h, sel, gr, grd, gox, gab, gh] = await Promise.all([
+      const [m, e, t, h, sel, gr, egr, grd, gox, gab, gh] = await Promise.all([
         loadShared("members", []),
         loadShared("events", []),
         loadShared("templates", []),
         loadShared("postHistory", []),
         loadShared("lastSelection", null),
         loadShared("groupRegulations", {}),
+        loadShared("eventGroupRegulations", {}),
         loadShared("groupReadings", {}),
         loadShared("groupOfficialX", {}),
         loadShared("groupAbbreviation", {}),
@@ -1981,6 +2028,7 @@ export default function App() {
       if (isFreshDefault) saveShared("templates", finalTemplates);
       setHistory(h);
       setGroupRegulationsRaw(gr || {});
+      setEventGroupRegulationsRaw(egr || {});
       setGroupReadingsRaw(grd || {});
       setGroupOfficialXRaw(gox || {});
       setGroupAbbreviationRaw(gab || {});
@@ -2010,6 +2058,7 @@ export default function App() {
       saveShared("templates", templatesRef.current);
       saveShared("postHistory", historyRef.current);
       saveShared("groupRegulations", groupRegulationsRef.current);
+      saveShared("eventGroupRegulations", eventGroupRegulationsRef.current);
       saveShared("groupReadings", groupReadingsRef.current);
       saveShared("groupOfficialX", groupOfficialXRef.current);
       saveShared("groupAbbreviation", groupAbbreviationRef.current);
@@ -2079,6 +2128,13 @@ export default function App() {
   const selectedEvent = events.find((e) => e.id === selectedEventId);
   const first = selectedMembers[0];
 
+  // グループの基本レギュレーションを、選択中イベントの上書きがあればそちらを優先して返す
+  const regulationFor = (groupName) => {
+    const override = selectedEventId ? eventGroupRegulations[selectedEventId]?.[groupName] : undefined;
+    if (override !== undefined) return override;
+    return groupRegulations[groupName] || "";
+  };
+
   const values = useMemo(() => ({
     "グループ": first ? first.groupName : "",
     "名前": first ? first.name : "",
@@ -2089,13 +2145,13 @@ export default function App() {
     "個人タグ": first?.personalTag || "",
     "略称": (first && groupAbbreviation[first.groupName]) || "",
     "公式X": (first && groupOfficialX[first.groupName]) || "",
-    "レギュレーション": (first && groupRegulations[first.groupName]) || "",
+    "レギュレーション": first ? regulationFor(first.groupName) : "",
     "レギュレーション一覧": dedupedNonEmpty(
-      dedupedNonEmpty(selectedMembers.map((m) => m.groupName)).map((g) => groupRegulations[g] || "")
+      dedupedNonEmpty(selectedMembers.map((m) => m.groupName)).map((g) => regulationFor(g))
     ).join("\n"),
     "名前一覧・繋": selectedMembers.map((m) => `#${m.name}`).join(" "),
     "メンバータグ一覧": selectedMembers.map((m) => `#${m.name}`).join("\n"), // 旧名称。既存テンプレート互換のため残す
-  }), [first, selectedEvent, selectedMembers, groupRegulations, groupOfficialX, groupAbbreviation]);
+  }), [first, selectedEvent, selectedMembers, groupRegulations, eventGroupRegulations, selectedEventId, groupOfficialX, groupAbbreviation]);
 
   // 行ごとに展開されるリスト系プレースホルダー（「#」などは含めない生の値）
   const listValues = useMemo(() => ({
@@ -2104,12 +2160,12 @@ export default function App() {
     "個人タグ一覧": dedupedNonEmpty(selectedMembers.map((m) => m.personalTag)),
     "グループ一覧": dedupedNonEmpty(selectedMembers.map((m) => m.groupName)),
     "レギュレーション一覧": dedupedNonEmpty(
-      dedupedNonEmpty(selectedMembers.map((m) => m.groupName)).map((g) => groupRegulations[g] || "")
+      dedupedNonEmpty(selectedMembers.map((m) => m.groupName)).map((g) => regulationFor(g))
     ),
     "略称一覧": dedupedNonEmpty(
       dedupedNonEmpty(selectedMembers.map((m) => m.groupName)).map((g) => groupAbbreviation[g] || "")
     ),
-  }), [selectedMembers, groupRegulations, groupAbbreviation]);
+  }), [selectedMembers, groupRegulations, eventGroupRegulations, selectedEventId, groupAbbreviation]);
 
   const recordHistory = (text) => {
     if (!text.trim()) return;
@@ -2238,6 +2294,8 @@ export default function App() {
             groupHidden={groupHidden}
             groupRegulations={groupRegulations}
             setGroupRegulations={setGroupRegulations}
+            eventGroupRegulations={eventGroupRegulations}
+            setEventGroupRegulations={setEventGroupRegulations}
             onNavigate={setView}
             recordHistory={recordHistory}
           />
