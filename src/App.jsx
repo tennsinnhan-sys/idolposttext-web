@@ -906,18 +906,69 @@ function MembersPage({ members, setMembers, groupRegulations, setGroupRegulation
 /* ------------------------------------------------------------------ */
 
 function emptyEvent() {
-  return { id: uid(), date: new Date().toISOString().slice(0, 10), eventName: "", place: "" };
+  return { id: uid(), date: new Date().toISOString().slice(0, 10), eventName: "", place: "", venues: [] };
 }
 
 function EventForm({ initial, onCancel, onSave, onDelete }) {
-  const [e, setE] = useState(initial);
+  const [e, setE] = useState({ venues: [], ...initial });
   const set = (k) => (v) => setE((p) => ({ ...p, [k]: v }));
+  const [venueDraft, setVenueDraft] = useState("");
+
+  const addVenue = () => {
+    const v = venueDraft.trim();
+    if (!v || (e.venues || []).includes(v)) return;
+    setE((p) => ({ ...p, venues: [...(p.venues || []), v] }));
+    setVenueDraft("");
+  };
+  const removeVenue = (v) => {
+    setE((p) => ({ ...p, venues: (p.venues || []).filter((x) => x !== v) }));
+  };
+  const moveVenue = (index, dir) => {
+    setE((p) => {
+      const list = [...(p.venues || [])];
+      const j = index + dir;
+      if (j < 0 || j >= list.length) return p;
+      [list[index], list[j]] = [list[j], list[index]];
+      return { ...p, venues: list };
+    });
+  };
+
   return (
     <Card>
       <div className="space-y-3">
         <TextInput type="date" value={e.date} onChange={set("date")} placeholder="日付" />
         <TextInput value={e.eventName} onChange={set("eventName")} placeholder="イベント名" />
         <TextInput value={e.place} onChange={set("place")} placeholder="会場" />
+
+        <div>
+          <p className="text-xs text-gray-400 mb-1.5">
+            サーキット形式などで会場が複数に分かれる場合は、ここに追加登録してください（ホーム画面でグループごとに選べるようになります）
+          </p>
+          {(e.venues || []).length > 0 && (
+            <div className="space-y-1.5 mb-2">
+              {e.venues.map((v, i) => (
+                <div key={v} className="flex items-center gap-2 bg-violet-50 rounded-2xl px-3 py-2">
+                  <span className="flex-1 text-sm text-gray-800 truncate">{v}</span>
+                  <button onClick={() => moveVenue(i, -1)} disabled={i === 0} className="text-gray-300 disabled:opacity-30 p-1">
+                    <ChevronUp size={15} />
+                  </button>
+                  <button onClick={() => moveVenue(i, 1)} disabled={i === e.venues.length - 1} className="text-gray-300 disabled:opacity-30 p-1">
+                    <ChevronDown size={15} />
+                  </button>
+                  <button onClick={() => removeVenue(v)} className="text-gray-300 p-1"><X size={15} /></button>
+                </div>
+              ))}
+            </div>
+          )}
+          <div className="flex gap-2">
+            <div className="flex-1">
+              <TextInput value={venueDraft} onChange={setVenueDraft} placeholder="会場名を入力" />
+            </div>
+            <button onClick={addVenue} className="w-10 h-10 rounded-2xl bg-indigo-500 text-white flex items-center justify-center flex-shrink-0">
+              <Plus size={17} />
+            </button>
+          </div>
+        </div>
       </div>
       <div className="flex gap-2 mt-5">
         <SoftButton tone="indigo" onClick={() => onSave(e)} disabled={!e.eventName.trim()}>保存</SoftButton>
@@ -1438,7 +1489,7 @@ function MemberSlotRow({ slot, members, groupNames, onChangeGroup, onChangeMembe
   );
 }
 
-function HomePage({ members, events, memberSlots, setMemberSlots, selectedEventId, setSelectedEventId, templates, activeTemplateContent, setActiveTemplateId, activeTemplateId, setActiveTemplateContent, values, listValues, recentGroups, touchGroup, groupLastEvent, rememberGroupEvent, groupReadings, groupHidden, groupRegulations, setGroupRegulations, eventGroupRegulations, setEventGroupRegulations, onNavigate, recordHistory }) {
+function HomePage({ members, events, memberSlots, setMemberSlots, selectedEventId, setSelectedEventId, templates, activeTemplateContent, setActiveTemplateId, activeTemplateId, setActiveTemplateContent, values, listValues, recentGroups, touchGroup, groupLastEvent, rememberGroupEvent, groupReadings, groupHidden, groupRegulations, setGroupRegulations, eventGroupRegulations, setEventGroupRegulations, eventGroupVenue, setEventGroupVenue, onNavigate, recordHistory }) {
   const groupNames = useMemo(() => {
     const all = dedupedNonEmpty(members.map((m) => m.groupName)).filter((g) => !groupHidden[g]);
     const used = recentGroups.filter((g) => all.includes(g));
@@ -1524,6 +1575,20 @@ function HomePage({ members, events, memberSlots, setMemberSlots, selectedEventI
     () => dedupedNonEmpty(memberSlots.map((s) => s.groupFilter)),
     [memberSlots]
   );
+
+  // グループごとの会場選択（イベントに会場が複数登録されている場合のみ使う）
+  const venueChoiceFor = (g) => {
+    if (!selectedEvent || (selectedEvent.venues || []).length === 0) return "";
+    const chosen = selectedEventId ? eventGroupVenue[selectedEventId]?.[g] : undefined;
+    return chosen && selectedEvent.venues.includes(chosen) ? chosen : selectedEvent.venues[0];
+  };
+  const changeVenueChoice = (g, venue) => {
+    if (!selectedEventId) return;
+    setEventGroupVenue((prev) => ({
+      ...prev,
+      [selectedEventId]: { ...(prev[selectedEventId] || {}), [g]: venue },
+    }));
+  };
 
   const text = useMemo(() => buildText(activeTemplateContent, values, listValues), [activeTemplateContent, values, listValues]);
   const overLimit = text.length > CHAR_LIMIT;
@@ -1793,11 +1858,29 @@ function HomePage({ members, events, memberSlots, setMemberSlots, selectedEventI
         )}
 
         {selectedGroupsForRegulation.length > 0 && (
-          <div className="mb-3 space-y-1.5">
+          <div className="mb-3 space-y-3">
             {selectedGroupsForRegulation.map((g) => (
               <div key={g}>
+                <p className="text-xs font-bold text-gray-700 mb-1 truncate">{g}</p>
+                {selectedEvent && (selectedEvent.venues || []).length > 0 && (
+                  <div className="flex items-center gap-2 mb-1">
+                    <span className="text-[10px] text-sky-500 w-10 flex-shrink-0">会場</span>
+                    <div className="relative flex-1">
+                      <select
+                        value={venueChoiceFor(g)}
+                        onChange={(e) => changeVenueChoice(g, e.target.value)}
+                        className="appearance-none w-full text-xs font-bold text-sky-700 bg-sky-50 border border-sky-200 rounded-xl px-2.5 py-1.5 pr-6 outline-none"
+                      >
+                        {selectedEvent.venues.map((v) => (
+                          <option key={v} value={v}>{v}</option>
+                        ))}
+                      </select>
+                      <ChevronDown size={12} className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-sky-400" />
+                    </div>
+                  </div>
+                )}
                 <div className="flex items-center gap-2">
-                  <span className="text-xs font-bold text-amber-700 w-24 flex-shrink-0 truncate">{g}</span>
+                  <span className="text-[10px] text-amber-500 w-10 flex-shrink-0">レギュ</span>
                   <input
                     value={regulationValueFor(g)}
                     onChange={(e) => changeRegulationDraft(g, e.target.value)}
@@ -1806,7 +1889,7 @@ function HomePage({ members, events, memberSlots, setMemberSlots, selectedEventI
                   />
                 </div>
                 {isRegulationOverridden(g) && (
-                  <p className="text-[10px] text-amber-500 mt-0.5 ml-[104px] flex items-center gap-2">
+                  <p className="text-[10px] text-amber-500 mt-0.5 ml-[46px] flex items-center gap-2">
                     このイベント限定の上書きです
                     <button onClick={() => clearRegulationOverride(g)} className="underline">グループの基本設定に戻す</button>
                   </p>
@@ -1852,6 +1935,7 @@ export default function App() {
   const [groupOfficialX, setGroupOfficialXRaw] = useState({});
   const [groupAbbreviation, setGroupAbbreviationRaw] = useState({});
   const [groupHidden, setGroupHiddenRaw] = useState({});
+  const [eventGroupVenue, setEventGroupVenueRaw] = useState({});
 
   const [memberSlots, setMemberSlots] = useState([{ id: uid(), groupFilter: null, memberId: null }]);
   const [selectedEventId, setSelectedEventId] = useState(null);
@@ -1902,6 +1986,8 @@ export default function App() {
   useEffect(() => { groupAbbreviationRef.current = groupAbbreviation; }, [groupAbbreviation]);
   const groupHiddenRef = useRef({});
   useEffect(() => { groupHiddenRef.current = groupHidden; }, [groupHidden]);
+  const eventGroupVenueRef = useRef({});
+  useEffect(() => { eventGroupVenueRef.current = eventGroupVenue; }, [eventGroupVenue]);
 
   const [isOnline, setIsOnline] = useState(typeof navigator !== "undefined" ? navigator.onLine : true);
   useEffect(() => {
@@ -1988,6 +2074,13 @@ export default function App() {
       return next;
     });
   };
+  const setEventGroupVenue = (updater) => {
+    setEventGroupVenueRaw((prev) => {
+      const next = typeof updater === "function" ? updater(prev) : updater;
+      saveShared("eventGroupVenue", next);
+      return next;
+    });
+  };
 
   // 選択中の状態（メンバー選択・イベント選択・テンプレート編集内容）を、起動時に一度だけ復元する
   const applySelection = (sel) => {
@@ -2005,7 +2098,7 @@ export default function App() {
   /* 初回読み込み */
   useEffect(() => {
     (async () => {
-      const [m, e, t, h, sel, gr, egr, grd, gox, gab, gh] = await Promise.all([
+      const [m, e, t, h, sel, gr, egr, grd, gox, gab, gh, egv] = await Promise.all([
         loadShared("members", []),
         loadShared("events", []),
         loadShared("templates", []),
@@ -2017,6 +2110,7 @@ export default function App() {
         loadShared("groupOfficialX", {}),
         loadShared("groupAbbreviation", {}),
         loadShared("groupHidden", {}),
+        loadShared("eventGroupVenue", {}),
       ]);
 
       setMembers(m);
@@ -2033,6 +2127,7 @@ export default function App() {
       setGroupOfficialXRaw(gox || {});
       setGroupAbbreviationRaw(gab || {});
       setGroupHiddenRaw(gh || {});
+      setEventGroupVenueRaw(egv || {});
 
       if (sel) {
         applySelection(sel);
@@ -2063,6 +2158,7 @@ export default function App() {
       saveShared("groupOfficialX", groupOfficialXRef.current);
       saveShared("groupAbbreviation", groupAbbreviationRef.current);
       saveShared("groupHidden", groupHiddenRef.current);
+      saveShared("eventGroupVenue", eventGroupVenueRef.current);
     };
     window.addEventListener("online", resync);
     return () => window.removeEventListener("online", resync);
@@ -2095,6 +2191,7 @@ export default function App() {
       }
       if ("postHistory" in all && !recentlySaved("postHistory")) setHistory(all.postHistory || []);
       if ("groupHidden" in all && !recentlySaved("groupHidden")) setGroupHiddenRaw(all.groupHidden || {});
+      if ("eventGroupVenue" in all && !recentlySaved("eventGroupVenue")) setEventGroupVenueRaw(all.eventGroupVenue || {});
     };
 
     const interval = setInterval(poll, POLL_MS);
@@ -2135,13 +2232,24 @@ export default function App() {
     return groupRegulations[groupName] || "";
   };
 
+  // 会場は、イベントに会場が複数登録されている場合はグループごとに選んだ会場を、
+  // それ以外はイベントの基本会場をそのまま使う
+  const venueFor = (groupName) => {
+    if (selectedEvent && (selectedEvent.venues || []).length > 0) {
+      const chosen = selectedEventId ? eventGroupVenue[selectedEventId]?.[groupName] : undefined;
+      if (chosen && selectedEvent.venues.includes(chosen)) return chosen;
+      return selectedEvent.venues[0];
+    }
+    return selectedEvent ? selectedEvent.place : "";
+  };
+
   const values = useMemo(() => ({
     "グループ": first ? first.groupName : "",
     "名前": first ? first.name : "",
     "Xアカウント": first ? first.account : "",
     "日付": selectedEvent ? formatDate(selectedEvent.date) : "",
     "イベント名": selectedEvent ? selectedEvent.eventName : "",
-    "会場": selectedEvent ? selectedEvent.place : "",
+    "会場": first ? venueFor(first.groupName) : (selectedEvent ? selectedEvent.place : ""),
     "個人タグ": first?.personalTag || "",
     "略称": (first && groupAbbreviation[first.groupName]) || "",
     "公式X": (first && groupOfficialX[first.groupName]) || "",
@@ -2151,7 +2259,7 @@ export default function App() {
     ).join("\n"),
     "名前一覧・繋": selectedMembers.map((m) => `#${m.name}`).join(" "),
     "メンバータグ一覧": selectedMembers.map((m) => `#${m.name}`).join("\n"), // 旧名称。既存テンプレート互換のため残す
-  }), [first, selectedEvent, selectedMembers, groupRegulations, eventGroupRegulations, selectedEventId, groupOfficialX, groupAbbreviation]);
+  }), [first, selectedEvent, selectedMembers, groupRegulations, eventGroupRegulations, eventGroupVenue, selectedEventId, groupOfficialX, groupAbbreviation]);
 
   // 行ごとに展開されるリスト系プレースホルダー（「#」などは含めない生の値）
   const listValues = useMemo(() => ({
@@ -2296,6 +2404,8 @@ export default function App() {
             setGroupRegulations={setGroupRegulations}
             eventGroupRegulations={eventGroupRegulations}
             setEventGroupRegulations={setEventGroupRegulations}
+            eventGroupVenue={eventGroupVenue}
+            setEventGroupVenue={setEventGroupVenue}
             onNavigate={setView}
             recordHistory={recordHistory}
           />
