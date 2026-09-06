@@ -478,7 +478,7 @@ function OcrIntakeForm({ onCancel, onExtracted }) {
 }
 
 
-function MembersPage({ members, setMembers, groupRegulations, setGroupRegulations, groupReadings, setGroupReadings, groupOfficialX, setGroupOfficialX, groupAbbreviation, setGroupAbbreviation, groupHidden, setGroupHidden, onBack }) {
+function MembersPage({ members, setMembers, groupRegulations, setGroupRegulations, events, eventGroupRegulations, setEventGroupRegulations, groupReadings, setGroupReadings, groupOfficialX, setGroupOfficialX, groupAbbreviation, setGroupAbbreviation, groupHidden, setGroupHidden, onBack }) {
   const [openGroup, setOpenGroup] = useState(null);
   const [editing, setEditing] = useState(null); // 'new' | member | null
   const [showHiddenGroups, setShowHiddenGroups] = useState(false);
@@ -555,6 +555,47 @@ function MembersPage({ members, setMembers, groupRegulations, setGroupRegulation
     readingSaveTimer.current = setTimeout(() => {
       setGroupReadings((prev) => ({ ...prev, [g]: value }));
     }, 500);
+  };
+
+  // イベント別のレギュレーション上書き（このグループ限定）の編集
+  const [eventRegDrafts, setEventRegDrafts] = useState({});
+  const eventRegTimers = useRef({});
+  const [addOverrideEventId, setAddOverrideEventId] = useState("");
+
+  const eventRegValueFor = (eventId, g) =>
+    Object.prototype.hasOwnProperty.call(eventRegDrafts, eventId) ? eventRegDrafts[eventId] : (eventGroupRegulations[eventId]?.[g] ?? "");
+
+  const changeEventRegDraft = (eventId, g, value) => {
+    setEventRegDrafts((prev) => ({ ...prev, [eventId]: value }));
+    if (eventRegTimers.current[eventId]) clearTimeout(eventRegTimers.current[eventId]);
+    eventRegTimers.current[eventId] = setTimeout(() => {
+      setEventGroupRegulations((prev) => ({
+        ...prev,
+        [eventId]: { ...(prev[eventId] || {}), [g]: value },
+      }));
+    }, 500);
+  };
+
+  const removeEventRegOverride = (eventId, g) => {
+    setEventGroupRegulations((prev) => {
+      const eventMap = { ...(prev[eventId] || {}) };
+      delete eventMap[g];
+      return { ...prev, [eventId]: eventMap };
+    });
+    setEventRegDrafts((prev) => {
+      const next = { ...prev };
+      delete next[eventId];
+      return next;
+    });
+  };
+
+  const addEventRegOverride = (g) => {
+    if (!addOverrideEventId) return;
+    setEventGroupRegulations((prev) => ({
+      ...prev,
+      [addOverrideEventId]: { ...(prev[addOverrideEventId] || {}), [g]: "" },
+    }));
+    setAddOverrideEventId("");
   };
 
   const changeOfficialXDraft = (g, value) => {
@@ -767,6 +808,62 @@ function MembersPage({ members, setMembers, groupRegulations, setGroupRegulation
             onChange={(v) => changeRegulationDraft(g, v)}
             placeholder="撮影レギュレーション（撮影可能 など・グループ共通）"
           />
+
+          {(() => {
+            const overriddenEventIds = Object.keys(eventGroupRegulations).filter(
+              (eid) => eventGroupRegulations[eid] && Object.prototype.hasOwnProperty.call(eventGroupRegulations[eid], g)
+            );
+            const overriddenEvents = overriddenEventIds
+              .map((eid) => events.find((e) => e.id === eid))
+              .filter(Boolean)
+              .sort((a, b) => (a.date < b.date ? 1 : -1));
+            const addableEvents = events.filter((e) => !overriddenEventIds.includes(e.id));
+            return (
+              <div className="bg-violet-50/60 rounded-2xl p-3 space-y-2">
+                <p className="text-[11px] font-bold text-gray-500">イベント別のレギュレーション上書き（{g}限定）</p>
+                {overriddenEvents.length === 0 && (
+                  <p className="text-[11px] text-gray-400">まだありません</p>
+                )}
+                {overriddenEvents.map((ev) => (
+                  <div key={ev.id} className="flex items-center gap-2">
+                    <span className="text-[10px] text-gray-400 w-20 flex-shrink-0 truncate">{formatDate(ev.date)}</span>
+                    <input
+                      value={eventRegValueFor(ev.id, g)}
+                      onChange={(e) => changeEventRegDraft(ev.id, g, e.target.value)}
+                      placeholder="未入力"
+                      className="flex-1 text-xs text-gray-700 bg-white border border-gray-200 rounded-xl px-2.5 py-1.5 outline-none min-w-0"
+                    />
+                    <button onClick={() => removeEventRegOverride(ev.id, g)} className="text-gray-300 flex-shrink-0"><X size={14} /></button>
+                  </div>
+                ))}
+                {addableEvents.length > 0 && (
+                  <div className="flex items-center gap-2 pt-1">
+                    <div className="relative flex-1">
+                      <select
+                        value={addOverrideEventId}
+                        onChange={(e) => setAddOverrideEventId(e.target.value)}
+                        className="appearance-none w-full text-xs text-gray-600 bg-white border border-gray-200 rounded-xl px-2.5 py-1.5 pr-6 outline-none"
+                      >
+                        <option value="">イベントを選んで追加...</option>
+                        {[...addableEvents].sort((a, b) => (a.date < b.date ? 1 : -1)).map((ev) => (
+                          <option key={ev.id} value={ev.id}>{formatDate(ev.date)} {ev.eventName}</option>
+                        ))}
+                      </select>
+                      <ChevronDown size={12} className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-gray-400" />
+                    </div>
+                    <button
+                      onClick={() => addEventRegOverride(g)}
+                      disabled={!addOverrideEventId}
+                      className="w-8 h-8 rounded-xl bg-indigo-500 text-white flex items-center justify-center flex-shrink-0 disabled:opacity-40"
+                    >
+                      <Plus size={15} />
+                    </button>
+                  </div>
+                )}
+              </div>
+            );
+          })()}
+
           <div className="space-y-2">
             {members.filter((m) => m.groupName === g).map((m, i, arr) => (
             <div key={m.id} className="bg-violet-50 rounded-2xl px-3 py-2">
@@ -2416,6 +2513,9 @@ export default function App() {
             setMembers={updateMembers}
             groupRegulations={groupRegulations}
             setGroupRegulations={setGroupRegulations}
+            events={events}
+            eventGroupRegulations={eventGroupRegulations}
+            setEventGroupRegulations={setEventGroupRegulations}
             groupReadings={groupReadings}
             setGroupReadings={setGroupReadings}
             groupOfficialX={groupOfficialX}
