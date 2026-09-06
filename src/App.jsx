@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef, useMemo } from "react";
 import {
   Sparkles, Camera, GripVertical,
   Users, CalendarDays, FileText, History, Plus, X, Pencil, Trash2, Copy, Send,
-  ChevronLeft, ChevronRight, ChevronUp, ChevronDown, Check, Eye, EyeOff, Download, Upload
+  ChevronLeft, ChevronRight, ChevronUp, ChevronDown, ChevronsDown, ChevronsUp, Check, Eye, EyeOff, Download, Upload
 } from "lucide-react";
 
 /* ------------------------------------------------------------------ */
@@ -53,6 +53,25 @@ function dedupedNonEmpty(arr) {
     if (s && !seen.has(s)) { seen.add(s); out.push(s); }
   }
   return out;
+}
+
+const KANA_ROWS = ["あ", "か", "さ", "た", "な", "は", "ま", "や", "ら", "わ", "他"];
+// 文字の頭文字から、あかさたな行を判定する（カタカナはひらがなに正規化してから判定）
+function kanaRowOf(ch) {
+  if (!ch) return "他";
+  let code = ch.codePointAt(0);
+  if (code >= 0x30a1 && code <= 0x30fa) code -= 0x60; // カタカナ→ひらがな
+  if (code < 0x3041 || code > 0x3096) return "他";
+  if (code <= 0x304a) return "あ";
+  if (code <= 0x3054) return "か";
+  if (code <= 0x305e) return "さ";
+  if (code <= 0x3069) return "た";
+  if (code <= 0x306e) return "な";
+  if (code <= 0x307d) return "は";
+  if (code <= 0x3082) return "ま";
+  if (code <= 0x3088) return "や";
+  if (code <= 0x308d) return "ら";
+  return "わ";
 }
 
 function formatDate(iso) {
@@ -616,6 +635,37 @@ function MembersPage({ members, setMembers, groupRegulations, setGroupRegulation
   const groups = useMemo(() => allGroups.filter((g) => !groupHidden[g]), [allGroups, groupHidden]);
   const hiddenGroupList = useMemo(() => allGroups.filter((g) => groupHidden[g]), [allGroups, groupHidden]);
 
+  // グループが増えてきた時のために、読み方の頭文字で「あ行・か行…」に分類して開閉できるようにする
+  // （開閉状態はこのブラウザだけの個人設定として保存する）
+  const groupedByRow = useMemo(() => {
+    const map = {};
+    KANA_ROWS.forEach((r) => { map[r] = []; });
+    groups.forEach((g) => {
+      const readingText = groupReadings[g] || g;
+      map[kanaRowOf(readingText[0])].push(g);
+    });
+    return map;
+  }, [groups, groupReadings]);
+  const nonEmptyRows = KANA_ROWS.filter((r) => groupedByRow[r].length > 0);
+
+  const [collapsedRows, setCollapsedRows] = useState(() => loadLocal("memberListCollapsedRows", {}));
+  const toggleRow = (row) => {
+    setCollapsedRows((prev) => {
+      const next = { ...prev, [row]: !prev[row] };
+      saveLocal("memberListCollapsedRows", next);
+      return next;
+    });
+  };
+  const allRowsCollapsed = nonEmptyRows.length > 0 && nonEmptyRows.every((r) => collapsedRows[r]);
+  const toggleAllRows = () => {
+    setCollapsedRows((prev) => {
+      const next = { ...prev };
+      nonEmptyRows.forEach((r) => { next[r] = !allRowsCollapsed; });
+      saveLocal("memberListCollapsedRows", next);
+      return next;
+    });
+  };
+
   const toggleGroupHidden = (g) => {
     setGroupHidden((prev) => ({ ...prev, [g]: !prev[g] }));
   };
@@ -936,7 +986,7 @@ function MembersPage({ members, setMembers, groupRegulations, setGroupRegulation
       <p className="text-[11px] text-indigo-400 bg-indigo-50 rounded-2xl px-3 py-2 mb-3">
         メンバー情報はこのアプリを使う全員で共有されます。誰でも追加・編集・削除できるのでご注意ください（イベント・テンプレート・投稿履歴・現在の選択状態も同様に共有されます）。
       </p>
-      <div className="flex flex-wrap gap-2 mb-4">
+      <div className="flex flex-wrap items-center gap-2 mb-4">
         <SoftButton tone="indigo" onClick={() => setEditing("new")}>
           <Plus size={15} className="inline -mt-0.5 mr-1" />新規登録
         </SoftButton>
@@ -946,13 +996,31 @@ function MembersPage({ members, setMembers, groupRegulations, setGroupRegulation
         <SoftButton tone="mint" onClick={() => setEditing("ocr")}>
           <Camera size={15} className="inline -mt-0.5 mr-1" />スクショから登録
         </SoftButton>
+        {nonEmptyRows.length > 0 && (
+          <button onClick={toggleAllRows} className="text-[11px] font-bold text-gray-500 bg-gray-100 rounded-xl px-2.5 py-1.5 flex items-center gap-1">
+            {allRowsCollapsed ? <ChevronsDown size={13} /> : <ChevronsUp size={13} />}
+            {allRowsCollapsed ? "すべて開く" : "すべて閉じる"}
+          </button>
+        )}
       </div>
 
       {groups.length === 0 && <p className="text-sm text-gray-400">保存済みメンバーはいません</p>}
 
-      <div className="space-y-3">
-        {groups.map((g) => renderGroupCard(g, false))}
-      </div>
+      {nonEmptyRows.map((row) => (
+        <div key={row} className="mb-3">
+          <button onClick={() => toggleRow(row)} className="w-full flex items-center justify-between bg-violet-100 rounded-2xl px-4 py-2.5 mb-2">
+            <span className="text-xs font-bold text-indigo-700">
+              {row === "他" ? "その他" : `${row}行`}（{groupedByRow[row].length}）
+            </span>
+            {collapsedRows[row] ? <ChevronRight size={15} className="text-indigo-400" /> : <ChevronDown size={15} className="text-indigo-400" />}
+          </button>
+          {!collapsedRows[row] && (
+            <div className="space-y-3">
+              {groupedByRow[row].map((g) => renderGroupCard(g, false))}
+            </div>
+          )}
+        </div>
+      ))}
 
       {hiddenGroupList.length > 0 && (
         <div className="mt-4">
