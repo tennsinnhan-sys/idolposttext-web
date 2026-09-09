@@ -1829,20 +1829,35 @@ function HomePage({ members, events, memberSlots, setMemberSlots, selectedEventI
       {/* プリセットタブ */}
       {presets.length > 0 && (
         <div className="px-1">
-          <div className="flex items-end gap-0.5 overflow-x-auto">
-            {presets.map((p) =>
-              presetEditMode ? (
-                <div key={p.id} className="flex-shrink-0 flex items-center gap-1 bg-violet-100 rounded-t-2xl px-2.5 py-2">
-                  <input
-                    value={p.name}
-                    onChange={(e) => renamePreset(p.id, e.target.value)}
-                    className="text-xs font-bold text-gray-500 bg-transparent outline-none w-16"
-                  />
-                  {presets.length > 1 && (
-                    <button onClick={() => deletePreset(p.id)} className="text-gray-400"><X size={13} /></button>
-                  )}
+          {presetEditMode ? (
+            <div className="flex items-end gap-1.5">
+              <div className="flex-1 min-w-0 relative">
+                <div className="flex items-end gap-0.5 overflow-x-auto">
+                  {presets.map((p) => (
+                    <div key={p.id} className="flex-shrink-0 flex items-center gap-1 bg-violet-100 rounded-t-2xl px-2.5 py-2">
+                      <input
+                        value={p.name}
+                        onChange={(e) => renamePreset(p.id, e.target.value)}
+                        className="text-xs font-bold text-gray-500 bg-transparent outline-none w-16"
+                      />
+                      {presets.length > 1 && (
+                        <button onClick={() => deletePreset(p.id)} className="text-gray-400"><X size={13} /></button>
+                      )}
+                    </div>
+                  ))}
                 </div>
-              ) : (
+                <div className="pointer-events-none absolute right-0 top-0 bottom-0 w-6 bg-gradient-to-r from-transparent to-indigo-50" />
+              </div>
+              <button onClick={addPreset} className="flex-shrink-0 w-8 h-8 rounded-full bg-violet-100 text-gray-400 flex items-center justify-center mb-0.5">
+                <Plus size={14} />
+              </button>
+              <button onClick={() => setPresetEditMode(false)} className="flex-shrink-0 w-8 h-8 rounded-full bg-indigo-500 text-white flex items-center justify-center mb-0.5">
+                <Check size={15} />
+              </button>
+            </div>
+          ) : (
+            <div className="flex items-end gap-0.5 overflow-x-auto">
+              {presets.map((p) => (
                 <button
                   key={p.id}
                   onClick={() => switchPreset(p.id)}
@@ -1852,20 +1867,12 @@ function HomePage({ members, events, memberSlots, setMemberSlots, selectedEventI
                 >
                   {p.name}
                 </button>
-              )
-            )}
-            {presetEditMode && (
-              <button onClick={addPreset} className="flex-shrink-0 w-8 h-8 rounded-full bg-violet-100 text-gray-400 flex items-center justify-center mb-0.5">
-                <Plus size={14} />
+              ))}
+              <button onClick={() => setPresetEditMode(true)} className="flex-shrink-0 ml-auto text-gray-300 p-2 mb-0.5">
+                <Pencil size={13} />
               </button>
-            )}
-            <button
-              onClick={() => setPresetEditMode((v) => !v)}
-              className="flex-shrink-0 ml-auto text-gray-300 p-2 mb-0.5"
-            >
-              {presetEditMode ? <Check size={15} /> : <Pencil size={13} />}
-            </button>
-          </div>
+            </div>
+          )}
         </div>
       )}
 
