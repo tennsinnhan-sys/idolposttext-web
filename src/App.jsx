@@ -1654,7 +1654,7 @@ function MemberSlotRow({ slot, members, groupNames, onChangeGroup, onChangeMembe
   );
 }
 
-function HomePage({ members, events, memberSlots, setMemberSlots, selectedEventId, setSelectedEventId, templates, activeTemplateContent, setActiveTemplateId, activeTemplateId, setActiveTemplateContent, values, listValues, recentGroups, touchGroup, groupLastEvent, rememberGroupEvent, groupReadings, groupHidden, groupRegulations, setGroupRegulations, eventGroupRegulations, setEventGroupRegulations, eventGroupVenue, setEventGroupVenue, onNavigate, recordHistory }) {
+function HomePage({ members, events, memberSlots, setMemberSlots, selectedEventId, setSelectedEventId, templates, activeTemplateContent, setActiveTemplateId, activeTemplateId, setActiveTemplateContent, values, listValues, recentGroups, touchGroup, groupLastEvent, rememberGroupEvent, groupReadings, groupHidden, groupRegulations, setGroupRegulations, eventGroupRegulations, setEventGroupRegulations, eventGroupVenue, setEventGroupVenue, presets, activePresetId, switchPreset, addPreset, renamePreset, deletePreset, onNavigate, recordHistory }) {
   const groupNames = useMemo(() => {
     const all = dedupedNonEmpty(members.map((m) => m.groupName)).filter((g) => !groupHidden[g]);
     const used = recentGroups.filter((g) => all.includes(g));
@@ -1822,11 +1822,55 @@ function HomePage({ members, events, memberSlots, setMemberSlots, selectedEventI
   };
 
   const quickTemplates = templates.slice(0, 4);
+  const [presetEditMode, setPresetEditMode] = useState(false);
 
   return (
     <div className="space-y-4">
+      {/* プリセットタブ */}
+      {presets.length > 0 && (
+        <div className="px-1">
+          <div className="flex items-end gap-0.5 overflow-x-auto">
+            {presets.map((p) =>
+              presetEditMode ? (
+                <div key={p.id} className="flex-shrink-0 flex items-center gap-1 bg-violet-100 rounded-t-2xl px-2.5 py-2">
+                  <input
+                    value={p.name}
+                    onChange={(e) => renamePreset(p.id, e.target.value)}
+                    className="text-xs font-bold text-gray-500 bg-transparent outline-none w-16"
+                  />
+                  {presets.length > 1 && (
+                    <button onClick={() => deletePreset(p.id)} className="text-gray-400"><X size={13} /></button>
+                  )}
+                </div>
+              ) : (
+                <button
+                  key={p.id}
+                  onClick={() => switchPreset(p.id)}
+                  className={`flex-shrink-0 text-xs font-bold rounded-t-2xl px-4 py-2.5 truncate max-w-[110px] ${
+                    activePresetId === p.id ? "bg-white text-indigo-600 shadow-[0_-2px_6px_rgba(70,80,160,0.08)] relative z-10" : "bg-violet-100 text-gray-400"
+                  }`}
+                >
+                  {p.name}
+                </button>
+              )
+            )}
+            {presetEditMode && (
+              <button onClick={addPreset} className="flex-shrink-0 w-8 h-8 rounded-full bg-violet-100 text-gray-400 flex items-center justify-center mb-0.5">
+                <Plus size={14} />
+              </button>
+            )}
+            <button
+              onClick={() => setPresetEditMode((v) => !v)}
+              className="flex-shrink-0 ml-auto text-gray-300 p-2 mb-0.5"
+            >
+              {presetEditMode ? <Check size={15} /> : <Pencil size={13} />}
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* メンバー選択 */}
-      <Card>
+      <Card className="!-mt-4">
         <CardHeader
           icon={Users}
           title="メンバー選択"
@@ -2101,6 +2145,9 @@ export default function App() {
   const [groupAbbreviation, setGroupAbbreviationRaw] = useState({});
   const [groupHidden, setGroupHiddenRaw] = useState({});
   const [eventGroupVenue, setEventGroupVenueRaw] = useState({});
+  const [presets, setPresetsRaw] = useState([]);
+  const [presetStates, setPresetStatesRaw] = useState({});
+  const [activePresetId, setActivePresetIdRaw] = useState(null);
 
   const [memberSlots, setMemberSlots] = useState([{ id: uid(), groupFilter: null, memberId: null }]);
   const [selectedEventId, setSelectedEventId] = useState(null);
@@ -2153,6 +2200,8 @@ export default function App() {
   useEffect(() => { groupHiddenRef.current = groupHidden; }, [groupHidden]);
   const eventGroupVenueRef = useRef({});
   useEffect(() => { eventGroupVenueRef.current = eventGroupVenue; }, [eventGroupVenue]);
+  const presetStatesRef = useRef({});
+  useEffect(() => { presetStatesRef.current = presetStates; }, [presetStates]);
 
   const [isOnline, setIsOnline] = useState(typeof navigator !== "undefined" ? navigator.onLine : true);
   useEffect(() => {
@@ -2247,6 +2296,56 @@ export default function App() {
     });
   };
 
+  const setPresets = (updater) => {
+    setPresetsRaw((prev) => {
+      const next = typeof updater === "function" ? updater(prev) : updater;
+      saveShared("presets", next);
+      return next;
+    });
+  };
+
+  const currentSelectionPayload = () => ({
+    memberIds: memberSlots.map((s) => s.memberId).filter(Boolean),
+    eventId: selectedEventId,
+    activeTemplateId,
+    activeTemplateContent,
+  });
+
+  const addPreset = () => {
+    const newPreset = { id: uid(), name: `プリセット${presets.length + 1}` };
+    setPresets((prev) => [...prev, newPreset]);
+  };
+  const renamePreset = (id, name) => {
+    setPresets((prev) => prev.map((p) => (p.id === id ? { ...p, name } : p)));
+  };
+  const deletePreset = (id) => {
+    if (presets.length <= 1) return; // 最低1つは残す
+    setPresets((prev) => prev.filter((p) => p.id !== id));
+    setPresetStatesRaw((prev) => {
+      const next = { ...prev };
+      delete next[id];
+      saveShared("presetStates", next);
+      return next;
+    });
+    if (activePresetId === id) {
+      const fallback = presets.find((p) => p.id !== id);
+      if (fallback) switchPreset(fallback.id);
+    }
+  };
+  const switchPreset = (presetId) => {
+    if (presetId === activePresetId) return;
+    if (presetSaveTimer.current) {
+      clearTimeout(presetSaveTimer.current);
+      presetSaveTimer.current = null;
+    }
+    const nextStates = { ...presetStatesRef.current, [activePresetId]: currentSelectionPayload() };
+    setPresetStatesRaw(nextStates);
+    saveShared("presetStates", nextStates);
+    setActivePresetIdRaw(presetId);
+    saveShared("activePresetId", presetId);
+    applySelection(nextStates[presetId]);
+  };
+
   // 選択中の状態（メンバー選択・イベント選択・テンプレート編集内容）を、起動時に一度だけ復元する
   const applySelection = (sel) => {
     if (!sel) return;
@@ -2263,7 +2362,7 @@ export default function App() {
   /* 初回読み込み */
   useEffect(() => {
     (async () => {
-      const [m, e, t, h, sel, gr, egr, grd, gox, gab, gh, egv] = await Promise.all([
+      const [m, e, t, h, legacySel, gr, egr, grd, gox, gab, gh, egv, presetsLoaded, presetStatesLoaded, activePresetIdLoaded] = await Promise.all([
         loadShared("members", []),
         loadShared("events", []),
         loadShared("templates", []),
@@ -2276,6 +2375,9 @@ export default function App() {
         loadShared("groupAbbreviation", {}),
         loadShared("groupHidden", {}),
         loadShared("eventGroupVenue", {}),
+        loadShared("presets", []),
+        loadShared("presetStates", {}),
+        loadShared("activePresetId", null),
       ]);
 
       setMembers(m);
@@ -2294,9 +2396,34 @@ export default function App() {
       setGroupHiddenRaw(gh || {});
       setEventGroupVenueRaw(egv || {});
 
-      if (sel) {
-        applySelection(sel);
-        if (!finalTemplates.find((x) => x.id === sel.activeTemplateId)) {
+      // プリセットが1つも無ければ、最初の3つを用意する
+      let finalPresets = presetsLoaded && presetsLoaded.length ? presetsLoaded : null;
+      if (!finalPresets) {
+        finalPresets = [
+          { id: uid(), name: "プリセット1" },
+          { id: uid(), name: "プリセット2" },
+          { id: uid(), name: "プリセット3" },
+        ];
+        saveShared("presets", finalPresets);
+      }
+      setPresetsRaw(finalPresets);
+
+      // 旧仕組み（プリセット導入前の「最後に使った状態」）が残っていれば、1つ目のプリセットに引き継ぐ
+      let finalPresetStates = presetStatesLoaded || {};
+      if (Object.keys(finalPresetStates).length === 0 && legacySel) {
+        finalPresetStates = { [finalPresets[0].id]: legacySel };
+        saveShared("presetStates", finalPresetStates);
+      }
+      setPresetStatesRaw(finalPresetStates);
+      presetStatesRef.current = finalPresetStates;
+
+      const validActiveId = finalPresets.some((p) => p.id === activePresetIdLoaded) ? activePresetIdLoaded : finalPresets[0].id;
+      setActivePresetIdRaw(validActiveId);
+
+      const stateToApply = finalPresetStates[validActiveId];
+      if (stateToApply) {
+        applySelection(stateToApply);
+        if (!finalTemplates.find((x) => x.id === stateToApply.activeTemplateId)) {
           setActiveTemplateId(finalTemplates[0]?.id ?? null);
           setActiveTemplateContent(finalTemplates[0]?.content ?? DEFAULT_TEMPLATE);
         }
@@ -2363,24 +2490,22 @@ export default function App() {
     return () => clearInterval(interval);
   }, [loaded]);
 
-  /* 選択状態（メンバー選択・イベント選択・テンプレート編集内容）は変更の度に共有保存する。
-     テンプレート編集は1文字ごとに変わるので、少し待ってからまとめて保存する（デバウンス）。
-     直前に他端末から受信した内容と同じ場合は、送り返す(エコー)だけになるので保存しない。 */
-  const selectionSaveTimer = useRef(null);
+  /* 選択状態（メンバー選択・イベント選択・テンプレート編集内容）は変更の度に「今のプリセット」に保存する。
+     テンプレート編集は1文字ごとに変わるので、少し待ってからまとめて保存する（デバウンス）。 */
+  const presetSaveTimer = useRef(null);
   useEffect(() => {
-    if (!loaded) return;
-    const payload = {
-      memberIds: memberSlots.map((s) => s.memberId).filter(Boolean),
-      eventId: selectedEventId,
-      activeTemplateId,
-      activeTemplateContent,
-    };
-    if (selectionSaveTimer.current) clearTimeout(selectionSaveTimer.current);
-    selectionSaveTimer.current = setTimeout(() => {
-      saveShared("lastSelection", payload);
+    if (!loaded || !activePresetId) return;
+    const payload = currentSelectionPayload();
+    if (presetSaveTimer.current) clearTimeout(presetSaveTimer.current);
+    presetSaveTimer.current = setTimeout(() => {
+      setPresetStatesRaw((prev) => {
+        const next = { ...prev, [activePresetId]: payload };
+        saveShared("presetStates", next);
+        return next;
+      });
     }, 600);
-    return () => clearTimeout(selectionSaveTimer.current);
-  }, [memberSlots, selectedEventId, activeTemplateId, activeTemplateContent, loaded]);
+    return () => clearTimeout(presetSaveTimer.current);
+  }, [memberSlots, selectedEventId, activeTemplateId, activeTemplateContent, loaded, activePresetId]);
 
   /* テンプレ用の値（プレースホルダー置換） */
   const selectedMembers = useMemo(
@@ -2571,6 +2696,12 @@ export default function App() {
             setEventGroupRegulations={setEventGroupRegulations}
             eventGroupVenue={eventGroupVenue}
             setEventGroupVenue={setEventGroupVenue}
+            presets={presets}
+            activePresetId={activePresetId}
+            switchPreset={switchPreset}
+            addPreset={addPreset}
+            renamePreset={renamePreset}
+            deletePreset={deletePreset}
             onNavigate={setView}
             recordHistory={recordHistory}
           />
