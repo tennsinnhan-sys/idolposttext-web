@@ -2636,16 +2636,25 @@ export default function App() {
   };
 
   if (!loaded) {
-    return <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-indigo-50 via-violet-50 to-pink-50 text-gray-400 text-sm">読み込み中…</div>;
+    return <div className="min-h-screen flex items-center justify-center bg-indigo-50 text-gray-400 text-sm">読み込み中…</div>;
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-indigo-50 via-violet-50 to-pink-50">
+    <div className="min-h-screen bg-indigo-50">
       <div className="max-w-md mx-auto px-4 pb-16 pt-6">
-        <div className="flex items-center gap-2 mb-2 px-1">
-          <Sparkles size={20} className="text-indigo-500" />
-          <span className="font-black text-xl tracking-tight text-gray-800">IdolPostText</span>
-          <span className="text-[10px] font-bold text-indigo-400 bg-indigo-100 rounded-full px-2 py-0.5 ml-auto">Web版</span>
+        <div className="relative flex items-center gap-3 mb-4 px-4 py-4 bg-white rounded-2xl overflow-hidden">
+          <div
+            className="pointer-events-none absolute top-0 right-0 w-32 h-20"
+            style={{ backgroundImage: "radial-gradient(#c4cbd9 1.2px, transparent 1.2px)", backgroundSize: "12px 12px" }}
+          />
+          <div className="relative w-9 h-9 rounded-full bg-teal-300 text-white flex items-center justify-center flex-shrink-0">
+            <Sparkles size={17} />
+          </div>
+          <div className="relative">
+            <span className="font-bold text-xl tracking-tight text-gray-800">IdolPostText</span>
+            <p className="text-[9px] font-semibold tracking-[0.2em] text-indigo-500 mt-0.5">POST TEXT GENERATOR</p>
+          </div>
+          <span className="relative text-[10px] font-bold text-indigo-400 bg-indigo-100 rounded-full px-2 py-0.5 ml-auto">Web版</span>
         </div>
 
         {!isOnline && (
