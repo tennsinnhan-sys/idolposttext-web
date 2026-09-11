@@ -46,6 +46,33 @@ const MULTI_PLACEHOLDERS = ["グループ一覧", "略称一覧", "名前一覧"
 // この一覧に含まれるプレースホルダーが1行の中にあると、その行を項目数ぶん展開する（各行の#などの文字も一緒に繰り返される）
 const LIST_PLACEHOLDER_KEYS = ["名前一覧", "Xアカ一覧", "個人タグ一覧", "グループ一覧", "レギュレーション一覧", "略称一覧"];
 
+// テンプレート編集欄で {プレースホルダー} を種類ごとに色分け表示するための下ごしらえ
+// 単数系（紫）・複数人系（緑）・未知の{...}（グレー）の3色に分ける
+function highlightTemplateContent(text) {
+  const source = text.endsWith("\n") ? `${text} ` : text; // 末尾の空行がつぶれないようにする
+  const regex = /\{[^{}]*\}/g;
+  const nodes = [];
+  let lastIndex = 0;
+  let match;
+  let key = 0;
+  while ((match = regex.exec(source)) !== null) {
+    if (match.index > lastIndex) {
+      nodes.push(<span key={key++}>{source.slice(lastIndex, match.index)}</span>);
+    }
+    const token = match[0];
+    const inner = token.slice(1, -1);
+    const isMulti = MULTI_PLACEHOLDERS.includes(inner) || inner === "メンバータグ一覧";
+    const isSingle = SINGLE_PLACEHOLDERS.includes(inner);
+    const cls = isMulti ? "text-teal-700 font-bold" : isSingle ? "text-indigo-600 font-bold" : "text-gray-400";
+    nodes.push(<span key={key++} className={cls}>{token}</span>);
+    lastIndex = regex.lastIndex;
+  }
+  if (lastIndex < source.length) {
+    nodes.push(<span key={key++}>{source.slice(lastIndex)}</span>);
+  }
+  return nodes;
+}
+
 function dedupedNonEmpty(arr) {
   const seen = new Set();
   const out = [];
@@ -658,7 +685,7 @@ function SharedLibraryBrowser({ onCopy }) {
   );
 }
 
-function MembersPage({ members, setMembers, groupRegulations, setGroupRegulations, events, eventGroupRegulations, setEventGroupRegulations, groupReadings, setGroupReadings, groupOfficialX, setGroupOfficialX, groupAbbreviation, setGroupAbbreviation, groupHidden, setGroupHidden, onBack }) {
+function MembersPage({ members, setMembers, groupRegulations, setGroupRegulations, events, eventGroupRegulations, setEventGroupRegulations, groupReadings, setGroupReadings, groupOfficialX, setGroupOfficialX, groupAbbreviation, setGroupAbbreviation, groupHidden, setGroupHidden, groupNoSpace, setGroupNoSpace, memberSortMode, setMemberSortMode, onBack }) {
   const [openGroup, setOpenGroup] = useState(null);
   const [editing, setEditing] = useState(null); // 'new' | member | null
   const [showHiddenGroups, setShowHiddenGroups] = useState(false);
@@ -829,6 +856,9 @@ function MembersPage({ members, setMembers, groupRegulations, setGroupRegulation
 
   const toggleGroupHidden = (g) => {
     setGroupHidden((prev) => ({ ...prev, [g]: !prev[g] }));
+  };
+  const toggleGroupNoSpace = (g) => {
+    setGroupNoSpace((prev) => ({ ...prev, [g]: !prev[g] }));
   };
 
   // グループ名の一括変更
@@ -1040,6 +1070,12 @@ function MembersPage({ members, setMembers, groupRegulations, setGroupRegulation
             onChange={(v) => changeAbbreviationDraft(g, v)}
             placeholder="略称"
           />
+          {/\s/.test(g) && (
+            <label className="flex items-center gap-1.5 text-xs text-gray-500">
+              <input type="checkbox" checked={!!groupNoSpace[g]} onChange={() => toggleGroupNoSpace(g)} />
+              テンプレートではスペースを除去する（例：{g.replace(/\s+/g, "")}）
+            </label>
+          )}
           <TextInput
             value={officialXDraft}
             onChange={(v) => changeOfficialXDraft(g, v)}
@@ -1201,6 +1237,24 @@ function MembersPage({ members, setMembers, groupRegulations, setGroupRegulation
             {allRowsCollapsed ? "すべて開く" : "すべて閉じる"}
           </button>
         )}
+      </div>
+
+      <div className="flex items-center justify-between bg-violet-50 rounded-2xl px-3 py-2 mb-4">
+        <span className="text-[11px] text-gray-500">選択時の並び順</span>
+        <div className="flex bg-white rounded-xl p-0.5">
+          <button
+            onClick={() => setMemberSortMode("manual")}
+            className={`text-[11px] font-bold rounded-lg px-2.5 py-1 ${memberSortMode === "manual" ? "bg-indigo-500 text-white" : "text-indigo-400"}`}
+          >
+            手動順
+          </button>
+          <button
+            onClick={() => setMemberSortMode("frequent")}
+            className={`text-[11px] font-bold rounded-lg px-2.5 py-1 ${memberSortMode === "frequent" ? "bg-indigo-500 text-white" : "text-indigo-400"}`}
+          >
+            よく使う順
+          </button>
+        </div>
       </div>
 
       {groups.length === 0 && <p className="text-sm text-gray-400">保存済みメンバーはいません</p>}
@@ -1500,12 +1554,13 @@ function EventsPage({ events, setEvents, onBack }) {
 /* テンプレート管理ページ（チップ挿入・ライブプレビュー付き）              */
 /* ------------------------------------------------------------------ */
 
-function TemplatesPage({ templates, setTemplates, activeId, setActiveId, content, setContent, values, listValues, recordHistory, onBack }) {
+function TemplatesPage({ templates, setTemplates, activeId, setActiveId, content, setContent, values, listValues, recordHistory, quickTemplateCount, setQuickTemplateCount, quickTemplateLayout, setQuickTemplateLayout, onBack }) {
   const [renaming, setRenaming] = useState(false);
   const [savingNewName, setSavingNewName] = useState(false);
   const [nameDraft, setNameDraft] = useState("");
   const [copyFlash, setCopyFlash] = useState(false);
   const taRef = useRef(null);
+  const taOverlayRef = useRef(null);
   const pendingCursor = useRef(null);
 
   useEffect(() => {
@@ -1574,6 +1629,42 @@ function TemplatesPage({ templates, setTemplates, activeId, setActiveId, content
     <div>
       <TopBar title="テンプレート選択・編集" onBack={onBack} />
 
+      <Card className="mb-4">
+        <p className="text-xs font-bold text-gray-500 mb-2.5">ホーム画面のクイックボタン表示設定</p>
+        <div className="flex items-center justify-between mb-2.5">
+          <span className="text-xs text-gray-500">表示する個数</span>
+          <div className="relative">
+            <select
+              value={quickTemplateCount}
+              onChange={(e) => setQuickTemplateCount(Number(e.target.value))}
+              className="appearance-none text-xs font-bold text-indigo-600 bg-indigo-50 border border-indigo-200 rounded-xl pl-3 pr-6 py-1.5 outline-none"
+            >
+              {Array.from({ length: 10 }, (_, i) => i + 1).map((n) => (
+                <option key={n} value={n}>{n}個</option>
+              ))}
+            </select>
+            <ChevronDown size={12} className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-indigo-400" />
+          </div>
+        </div>
+        <div className="flex items-center justify-between">
+          <span className="text-xs text-gray-500">並べ方</span>
+          <div className="flex bg-indigo-50 rounded-xl p-0.5">
+            <button
+              onClick={() => setQuickTemplateLayout("wrap")}
+              className={`text-[11px] font-bold rounded-lg px-2.5 py-1 ${quickTemplateLayout === "wrap" ? "bg-indigo-500 text-white" : "text-indigo-400"}`}
+            >
+              折り返し
+            </button>
+            <button
+              onClick={() => setQuickTemplateLayout("scroll")}
+              className={`text-[11px] font-bold rounded-lg px-2.5 py-1 ${quickTemplateLayout === "scroll" ? "bg-indigo-500 text-white" : "text-indigo-400"}`}
+            >
+              横スクロール
+            </button>
+          </div>
+        </div>
+      </Card>
+
       <SoftButton tone="indigo" onClick={startNew} className="mb-4 w-full">
         <Plus size={15} className="inline -mt-0.5 mr-1" />新規作成
       </SoftButton>
@@ -1621,13 +1712,29 @@ function TemplatesPage({ templates, setTemplates, activeId, setActiveId, content
             <button key={k} onClick={() => insert(k)} className="text-[11px] font-bold bg-teal-100 text-teal-700 rounded-full px-2.5 py-1.5">{k}</button>
           ))}
         </div>
-        <textarea
-          ref={taRef}
-          value={content}
-          onChange={(e) => setContent(e.target.value)}
-          rows={7}
-          className="w-full rounded-2xl bg-violet-50 focus:bg-white focus:ring-2 ring-indigo-300 outline-none p-3 text-sm text-gray-800 font-mono"
-        />
+        <div className="relative rounded-2xl bg-violet-50 focus-within:bg-white focus-within:ring-2 ring-indigo-300">
+          <div
+            ref={taOverlayRef}
+            aria-hidden="true"
+            className="absolute inset-0 p-3 text-sm font-mono whitespace-pre-wrap break-words overflow-hidden pointer-events-none"
+          >
+            {highlightTemplateContent(content)}
+          </div>
+          <textarea
+            ref={taRef}
+            value={content}
+            onChange={(e) => setContent(e.target.value)}
+            onScroll={(e) => {
+              if (taOverlayRef.current) {
+                taOverlayRef.current.scrollTop = e.target.scrollTop;
+                taOverlayRef.current.scrollLeft = e.target.scrollLeft;
+              }
+            }}
+            rows={7}
+            className="relative w-full resize-none bg-transparent outline-none p-3 text-sm font-mono"
+            style={{ color: "transparent", caretColor: "#374151" }}
+          />
+        </div>
       </Card>
 
       <Card className="mb-4">
@@ -1781,9 +1888,20 @@ function HistoryPage({ history, setHistory, members, events, groupReadings, onBa
 /* ホーム（投稿作成）ページ                                              */
 /* ------------------------------------------------------------------ */
 
-function MemberSlotRow({ slot, members, groupNames, onChangeGroup, onChangeMember, onBulkAddGroup, onDragStart, onDragMove, onDragEnd, isDragging, dragDeltaY, onRemove, removable }) {
+function MemberSlotRow({ slot, members, groupNames, memberSortMode, recentMembers, onChangeGroup, onChangeMember, onBulkAddGroup, onDragStart, onDragMove, onDragEnd, isDragging, dragDeltaY, onRemove, removable }) {
   const current = members.find((m) => m.id === slot.memberId);
-  const groupMembers = members.filter((m) => m.groupName === slot.groupFilter);
+  const groupMembersManual = members.filter((m) => m.groupName === slot.groupFilter);
+  const groupMembers =
+    memberSortMode === "frequent"
+      ? [...groupMembersManual].sort((a, b) => {
+          const ai = recentMembers.indexOf(a.id);
+          const bi = recentMembers.indexOf(b.id);
+          if (ai === -1 && bi === -1) return 0; // どちらも未使用なら元の順のまま
+          if (ai === -1) return 1;
+          if (bi === -1) return -1;
+          return ai - bi; // recentMembersの先頭ほど最近使った
+        })
+      : groupMembersManual;
 
   return (
     <div
@@ -1853,7 +1971,7 @@ function MemberSlotRow({ slot, members, groupNames, onChangeGroup, onChangeMembe
   );
 }
 
-function HomePage({ members, events, memberSlots, setMemberSlots, selectedEventId, setSelectedEventId, templates, activeTemplateContent, setActiveTemplateId, activeTemplateId, setActiveTemplateContent, values, listValues, recentGroups, touchGroup, groupLastEvent, rememberGroupEvent, groupReadings, groupHidden, groupRegulations, setGroupRegulations, eventGroupRegulations, setEventGroupRegulations, eventGroupVenue, setEventGroupVenue, presets, activePresetId, switchPreset, addPreset, renamePreset, deletePreset, onNavigate, recordHistory }) {
+function HomePage({ members, events, memberSlots, setMemberSlots, selectedEventId, setSelectedEventId, templates, activeTemplateContent, setActiveTemplateId, activeTemplateId, setActiveTemplateContent, values, listValues, recentGroups, touchGroup, groupLastEvent, rememberGroupEvent, groupReadings, groupHidden, groupRegulations, setGroupRegulations, eventGroupRegulations, setEventGroupRegulations, eventGroupVenue, setEventGroupVenue, memberSortMode, recentMembers, quickTemplateCount, quickTemplateLayout, presets, activePresetId, switchPreset, addPreset, renamePreset, deletePreset, onNavigate, recordHistory }) {
   const groupNames = useMemo(() => {
     const all = dedupedNonEmpty(members.map((m) => m.groupName)).filter((g) => !groupHidden[g]);
     const used = recentGroups.filter((g) => all.includes(g));
@@ -2020,7 +2138,7 @@ function HomePage({ members, events, memberSlots, setMemberSlots, selectedEventI
     window.open(`https://twitter.com/intent/tweet?text=${encodeURIComponent(text)}`, "_blank");
   };
 
-  const quickTemplates = templates.slice(0, 4);
+  const quickTemplates = templates.slice(0, quickTemplateCount);
   const [presetEditMode, setPresetEditMode] = useState(false);
 
   return (
@@ -2098,6 +2216,8 @@ function HomePage({ members, events, memberSlots, setMemberSlots, selectedEventI
                   slot={slot}
                   members={members}
                   groupNames={groupNames}
+                  memberSortMode={memberSortMode}
+                  recentMembers={recentMembers}
                   removable={memberSlots.length > 1}
                   onChangeGroup={(g) => {
                     updateSlot(i, { groupFilter: g, memberId: null });
@@ -2148,8 +2268,14 @@ function HomePage({ members, events, memberSlots, setMemberSlots, selectedEventI
           <>
             <div className="flex items-center justify-between">
               <div className="relative inline-block">
-                <button onClick={() => setOpenEvent((v) => !v)} className="text-sm font-bold text-indigo-600 flex items-center gap-1">
-                  {selectedEvent ? `${formatDate(selectedEvent.date)} ${selectedEvent.eventName}` : "選択なし"} <ChevronDown size={13} />
+                <button onClick={() => setOpenEvent((v) => !v)} className="text-sm font-bold text-indigo-600 flex items-center gap-1 text-left">
+                  {selectedEvent ? (
+                    <span>
+                      {formatDate(selectedEvent.date)}
+                      <br />
+                      {selectedEvent.eventName}
+                    </span>
+                  ) : "選択なし"} <ChevronDown size={13} className="flex-shrink-0 self-start mt-1" />
                 </button>
                 {openEvent && (
                   <div className="absolute z-10 mt-1 bg-white rounded-2xl shadow-lg py-1.5 min-w-[220px] max-h-56 overflow-auto">
@@ -2259,17 +2385,31 @@ function HomePage({ members, events, memberSlots, setMemberSlots, selectedEventI
         </div>
 
         {quickTemplates.length > 0 && (
-          <div className="flex gap-1.5 mb-3">
-            {quickTemplates.map((t) => (
-              <button
-                key={t.id}
-                onClick={() => { setActiveTemplateId(t.id); setActiveTemplateContent(t.content); }}
-                className={`flex-1 text-xs font-bold rounded-2xl px-2 py-2 truncate ${activeTemplateId === t.id ? "bg-indigo-500 text-white" : "bg-teal-100 text-teal-800"}`}
-              >
-                {t.name}
-              </button>
-            ))}
-          </div>
+          quickTemplateLayout === "scroll" ? (
+            <div className="flex gap-1.5 mb-3 overflow-x-auto pb-0.5">
+              {quickTemplates.map((t) => (
+                <button
+                  key={t.id}
+                  onClick={() => { setActiveTemplateId(t.id); setActiveTemplateContent(t.content); }}
+                  className={`flex-shrink-0 text-xs font-bold rounded-2xl px-3 py-2 truncate max-w-[120px] ${activeTemplateId === t.id ? "bg-indigo-500 text-white" : "bg-teal-100 text-teal-800"}`}
+                >
+                  {t.name}
+                </button>
+              ))}
+            </div>
+          ) : (
+            <div className="flex flex-wrap gap-1.5 mb-3">
+              {quickTemplates.map((t) => (
+                <button
+                  key={t.id}
+                  onClick={() => { setActiveTemplateId(t.id); setActiveTemplateContent(t.content); }}
+                  className={`flex-grow basis-[27%] text-xs font-bold rounded-2xl px-2 py-2 truncate ${activeTemplateId === t.id ? "bg-indigo-500 text-white" : "bg-teal-100 text-teal-800"}`}
+                >
+                  {t.name}
+                </button>
+              ))}
+            </div>
+          )
         )}
 
         {selectedGroupsForRegulation.length > 0 && (
@@ -2358,6 +2498,7 @@ export default function App() {
   const [groupOfficialX, setGroupOfficialXRaw] = useState({});
   const [groupAbbreviation, setGroupAbbreviationRaw] = useState({});
   const [groupHidden, setGroupHiddenRaw] = useState({});
+  const [groupNoSpace, setGroupNoSpaceRaw] = useState({});
   const [eventGroupVenue, setEventGroupVenueRaw] = useState({});
   const [presets, setPresetsRaw] = useState([]);
   const [presetStates, setPresetStatesRaw] = useState({});
@@ -2369,6 +2510,32 @@ export default function App() {
   const [activeTemplateContent, setActiveTemplateContent] = useState(DEFAULT_TEMPLATE);
   const [recentGroups, setRecentGroups] = useState(() => loadLocal("recentGroups", []));
   const [groupLastEvent, setGroupLastEvent] = useState(() => loadLocal("groupLastEvent", {}));
+  const [recentMembers, setRecentMembers] = useState(() => loadLocal("recentMembers", []));
+  const [memberSortMode, setMemberSortModeRaw] = useState(() => loadLocal("memberSortMode", "manual")); // 'manual' | 'frequent'
+  const setMemberSortMode = (mode) => {
+    setMemberSortModeRaw(mode);
+    saveLocal("memberSortMode", mode);
+  };
+  const [quickTemplateCount, setQuickTemplateCountRaw] = useState(() => loadLocal("quickTemplateCount", 4)); // 1〜10
+  const setQuickTemplateCount = (n) => {
+    setQuickTemplateCountRaw(n);
+    saveLocal("quickTemplateCount", n);
+  };
+  const [quickTemplateLayout, setQuickTemplateLayoutRaw] = useState(() => loadLocal("quickTemplateLayout", "wrap")); // 'wrap' | 'scroll'
+  const setQuickTemplateLayout = (mode) => {
+    setQuickTemplateLayoutRaw(mode);
+    saveLocal("quickTemplateLayout", mode);
+  };
+
+  // 実際にコピー/投稿した（＝recordHistoryが呼ばれた）メンバーの「使った順」を更新する
+  const touchMember = (memberId) => {
+    if (!memberId) return;
+    setRecentMembers((prev) => {
+      const next = [memberId, ...prev.filter((id) => id !== memberId)];
+      saveLocal("recentMembers", next);
+      return next;
+    });
+  };
 
   // グループを選ぶ・そのグループのメンバーを選ぶ、のどちらかが起きるたびに「使った順」を更新する
   const touchGroup = (groupName) => {
@@ -2412,6 +2579,8 @@ export default function App() {
   useEffect(() => { groupAbbreviationRef.current = groupAbbreviation; }, [groupAbbreviation]);
   const groupHiddenRef = useRef({});
   useEffect(() => { groupHiddenRef.current = groupHidden; }, [groupHidden]);
+  const groupNoSpaceRef = useRef({});
+  useEffect(() => { groupNoSpaceRef.current = groupNoSpace; }, [groupNoSpace]);
   const eventGroupVenueRef = useRef({});
   useEffect(() => { eventGroupVenueRef.current = eventGroupVenue; }, [eventGroupVenue]);
   const presetStatesRef = useRef({});
@@ -2502,6 +2671,13 @@ export default function App() {
       return next;
     });
   };
+  const setGroupNoSpace = (updater) => {
+    setGroupNoSpaceRaw((prev) => {
+      const next = typeof updater === "function" ? updater(prev) : updater;
+      saveShared("groupNoSpace", next);
+      return next;
+    });
+  };
   const setEventGroupVenue = (updater) => {
     setEventGroupVenueRaw((prev) => {
       const next = typeof updater === "function" ? updater(prev) : updater;
@@ -2577,7 +2753,7 @@ export default function App() {
   useEffect(() => {
     if (!user) return;
     (async () => {
-      const [m, e, t, h, legacySel, gr, egr, grd, gox, gab, gh, egv, presetsLoaded, presetStatesLoaded, activePresetIdLoaded] = await Promise.all([
+      const [m, e, t, h, legacySel, gr, egr, grd, gox, gab, gh, gns, egv, presetsLoaded, presetStatesLoaded, activePresetIdLoaded] = await Promise.all([
         loadShared("members", []),
         loadShared("events", []),
         loadShared("templates", []),
@@ -2589,6 +2765,7 @@ export default function App() {
         loadShared("groupOfficialX", {}),
         loadShared("groupAbbreviation", {}),
         loadShared("groupHidden", {}),
+        loadShared("groupNoSpace", {}),
         loadShared("eventGroupVenue", {}),
         loadShared("presets", []),
         loadShared("presetStates", {}),
@@ -2609,6 +2786,7 @@ export default function App() {
       setGroupOfficialXRaw(gox || {});
       setGroupAbbreviationRaw(gab || {});
       setGroupHiddenRaw(gh || {});
+      setGroupNoSpaceRaw(gns || {});
       setEventGroupVenueRaw(egv || {});
 
       // プリセットが1つも無ければ、最初の3つを用意する
@@ -2665,6 +2843,7 @@ export default function App() {
       saveShared("groupOfficialX", groupOfficialXRef.current);
       saveShared("groupAbbreviation", groupAbbreviationRef.current);
       saveShared("groupHidden", groupHiddenRef.current);
+      saveShared("groupNoSpace", groupNoSpaceRef.current);
       saveShared("eventGroupVenue", eventGroupVenueRef.current);
     };
     window.addEventListener("online", resync);
@@ -2698,6 +2877,7 @@ export default function App() {
       }
       if ("postHistory" in all && !recentlySaved("postHistory")) setHistory(all.postHistory || []);
       if ("groupHidden" in all && !recentlySaved("groupHidden")) setGroupHiddenRaw(all.groupHidden || {});
+      if ("groupNoSpace" in all && !recentlySaved("groupNoSpace")) setGroupNoSpaceRaw(all.groupNoSpace || {});
       if ("eventGroupVenue" in all && !recentlySaved("eventGroupVenue")) setEventGroupVenueRaw(all.eventGroupVenue || {});
     };
 
@@ -2748,8 +2928,12 @@ export default function App() {
     return selectedEvent ? selectedEvent.place : "";
   };
 
+  // 「テンプレートではスペースを除去する」が設定されているグループは、投稿文用の名前だけ空白を取り除く
+  // （一覧表示や登録データ上のグループ名そのものは変更しない）
+  const groupNameFor = (groupName) => (groupNoSpace[groupName] ? groupName.replace(/\s+/g, "") : groupName);
+
   const values = useMemo(() => ({
-    "グループ": first ? first.groupName : "",
+    "グループ": first ? groupNameFor(first.groupName) : "",
     "名前": first ? first.name : "",
     "Xアカウント": first ? first.account : "",
     "日付": selectedEvent ? formatDate(selectedEvent.date) : "",
@@ -2764,14 +2948,14 @@ export default function App() {
     ).join("\n"),
     "名前一覧・繋": selectedMembers.map((m) => `#${m.name}`).join(" "),
     "メンバータグ一覧": selectedMembers.map((m) => `#${m.name}`).join("\n"), // 旧名称。既存テンプレート互換のため残す
-  }), [first, selectedEvent, selectedMembers, groupRegulations, eventGroupRegulations, eventGroupVenue, selectedEventId, groupOfficialX, groupAbbreviation]);
+  }), [first, selectedEvent, selectedMembers, groupRegulations, eventGroupRegulations, eventGroupVenue, selectedEventId, groupOfficialX, groupAbbreviation, groupNoSpace]);
 
   // 行ごとに展開されるリスト系プレースホルダー（「#」などは含めない生の値）
   const listValues = useMemo(() => ({
     "名前一覧": selectedMembers.map((m) => m.name),
     "Xアカ一覧": selectedMembers.map((m) => m.account),
     "個人タグ一覧": dedupedNonEmpty(selectedMembers.map((m) => m.personalTag)),
-    "グループ一覧": dedupedNonEmpty(selectedMembers.map((m) => m.groupName)),
+    "グループ一覧": dedupedNonEmpty(selectedMembers.map((m) => m.groupName)).map((g) => groupNameFor(g)),
     "レギュレーション一覧": dedupedNonEmpty(
       dedupedNonEmpty(selectedMembers.map((m) => m.groupName)).map((g) => regulationFor(g))
     ),
@@ -2784,6 +2968,7 @@ export default function App() {
     if (!text.trim()) return;
     const names = selectedMembers.map((m) => m.name).join("・");
     updateHistory((prev) => [{ id: uid(), date: new Date().toISOString(), text, memberName: names, eventName: selectedEvent?.eventName || "" }, ...prev].slice(0, 100));
+    selectedMembers.forEach((m) => touchMember(m.id));
   };
 
   /* データのバックアップ（保存領域に頼りきらないための書き出し・読み込み） */
@@ -2949,6 +3134,10 @@ export default function App() {
             setEventGroupRegulations={setEventGroupRegulations}
             eventGroupVenue={eventGroupVenue}
             setEventGroupVenue={setEventGroupVenue}
+            memberSortMode={memberSortMode}
+            recentMembers={recentMembers}
+            quickTemplateCount={quickTemplateCount}
+            quickTemplateLayout={quickTemplateLayout}
             presets={presets}
             activePresetId={activePresetId}
             switchPreset={switchPreset}
@@ -2976,6 +3165,10 @@ export default function App() {
             setGroupAbbreviation={setGroupAbbreviation}
             groupHidden={groupHidden}
             setGroupHidden={setGroupHidden}
+            groupNoSpace={groupNoSpace}
+            setGroupNoSpace={setGroupNoSpace}
+            memberSortMode={memberSortMode}
+            setMemberSortMode={setMemberSortMode}
             onBack={() => setView("home")}
           />
         )}
@@ -2991,6 +3184,10 @@ export default function App() {
             values={values}
             listValues={listValues}
             recordHistory={recordHistory}
+            quickTemplateCount={quickTemplateCount}
+            setQuickTemplateCount={setQuickTemplateCount}
+            quickTemplateLayout={quickTemplateLayout}
+            setQuickTemplateLayout={setQuickTemplateLayout}
             onBack={() => setView("home")}
           />
         )}
