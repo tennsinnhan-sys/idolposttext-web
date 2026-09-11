@@ -113,7 +113,7 @@ function buildText(template, values, listValues = {}) {
 }
 
 import {
-  apiConfigured, apiLoad, apiSave, apiGetMe, apiLogout, loginUrl,
+  apiConfigured, apiLoad, apiSave, apiGetMe, apiLogout, loginUrl, consumeUrlToken,
   apiLoadSharedMembers, apiPublishSharedMember, apiDeleteSharedMember,
 } from "./apiClient";
 
@@ -2238,6 +2238,7 @@ export default function App() {
   const [user, setUser] = useState(undefined);
   useEffect(() => {
     if (!apiConfigured) { setUser(null); return; }
+    consumeUrlToken();
     apiGetMe().then(setUser).catch(() => setUser(null));
   }, []);
 
