@@ -509,6 +509,7 @@ function SharedLibraryBrowser({ onCopy }) {
   const [list, setList] = useState([]);
   const [query, setQuery] = useState("");
   const [copiedId, setCopiedId] = useState(null);
+  const [collapsedRows, setCollapsedRows] = useState(() => loadLocal("sharedLibraryCollapsedRows", {}));
 
   useEffect(() => {
     apiLoadSharedMembers()
@@ -522,32 +523,89 @@ function SharedLibraryBrowser({ onCopy }) {
     return `${m.groupName || ""}${m.name || ""}`.includes(q);
   });
 
+  // 読み方の情報は無い（他の人のグループなので）ので、グループ名そのものの頭文字で分類する
+  const groupedByRow = useMemo(() => {
+    const map = {};
+    KANA_ROWS.forEach((r) => { map[r] = {}; });
+    filtered.forEach((m) => {
+      const g = m.groupName || "（グループ未設定）";
+      const row = kanaRowOf(g[0]);
+      if (!map[row][g]) map[row][g] = [];
+      map[row][g].push(m);
+    });
+    return map;
+  }, [filtered]);
+  const nonEmptyRows = KANA_ROWS.filter((r) => Object.keys(groupedByRow[r]).length > 0);
+
+  const toggleRow = (row) => {
+    setCollapsedRows((prev) => {
+      const next = { ...prev, [row]: !prev[row] };
+      saveLocal("sharedLibraryCollapsedRows", next);
+      return next;
+    });
+  };
+  const allRowsCollapsed = nonEmptyRows.length > 0 && nonEmptyRows.every((r) => collapsedRows[r]);
+  const toggleAllRows = () => {
+    setCollapsedRows((prev) => {
+      const next = { ...prev };
+      nonEmptyRows.forEach((r) => { next[r] = !allRowsCollapsed; });
+      saveLocal("sharedLibraryCollapsedRows", next);
+      return next;
+    });
+  };
+
   return (
     <div>
       <p className="text-xs text-gray-400 mb-3">
         他の人が「共有一覧に載せる」を選んで登録したメンバーの一覧です。タップするとあなたのメンバー一覧にそのままコピーされます。
       </p>
-      <TextInput value={query} onChange={setQuery} placeholder="グループ名・名前で絞り込み" />
-      <div className="mt-3 space-y-2">
-        {status === "loading" && <p className="text-sm text-gray-400">読み込み中…</p>}
-        {status === "error" && <p className="text-sm text-rose-500">読み込みに失敗しました。</p>}
-        {status === "done" && filtered.length === 0 && <p className="text-sm text-gray-400">該当するメンバーはいません</p>}
-        {filtered.map((m) => (
-          <div key={m.id} className="flex items-center gap-2 bg-violet-50 rounded-2xl px-3 py-2.5">
-            <IconBadge colorKey={m.iconColorName} colorKey2={m.iconColorName2} size={30} />
-            <div className="flex-1 min-w-0">
-              <p className="text-sm font-bold text-gray-800 truncate">{m.name}</p>
-              <p className="text-xs text-gray-400 truncate">{m.groupName}{m.account ? `　@${m.account}` : ""}</p>
-            </div>
-            <SoftButton
-              tone="indigo"
-              onClick={() => { onCopy(m); setCopiedId(m.id); }}
-            >
-              {copiedId === m.id ? "コピーしました" : "コピー"}
-            </SoftButton>
-          </div>
-        ))}
+      <div className="flex items-center gap-2 mb-3">
+        <div className="flex-1"><TextInput value={query} onChange={setQuery} placeholder="グループ名・名前で絞り込み" /></div>
+        {nonEmptyRows.length > 0 && (
+          <button onClick={toggleAllRows} className="flex-shrink-0 text-[11px] font-bold text-gray-500 bg-gray-100 rounded-xl px-2.5 py-2 flex items-center gap-1">
+            {allRowsCollapsed ? <ChevronsDown size={13} /> : <ChevronsUp size={13} />}
+            {allRowsCollapsed ? "すべて開く" : "すべて閉じる"}
+          </button>
+        )}
       </div>
+
+      {status === "loading" && <p className="text-sm text-gray-400">読み込み中…</p>}
+      {status === "error" && <p className="text-sm text-rose-500">読み込みに失敗しました。</p>}
+      {status === "done" && filtered.length === 0 && <p className="text-sm text-gray-400">該当するメンバーはいません</p>}
+
+      {nonEmptyRows.map((row) => (
+        <div key={row} className="mb-3">
+          <button onClick={() => toggleRow(row)} className="w-full flex items-center justify-between bg-violet-100 rounded-2xl px-4 py-2.5 mb-2">
+            <span className="text-xs font-bold text-indigo-700">
+              {row === "他" ? "その他" : `${row}行`}（{Object.values(groupedByRow[row]).reduce((n, arr) => n + arr.length, 0)}人）
+            </span>
+            {collapsedRows[row] ? <ChevronRight size={15} className="text-indigo-400" /> : <ChevronDown size={15} className="text-indigo-400" />}
+          </button>
+          {!collapsedRows[row] && (
+            <div className="space-y-3">
+              {Object.keys(groupedByRow[row]).sort((a, b) => a.localeCompare(b, "ja")).map((g) => (
+                <Card key={g}>
+                  <p className="text-xs font-bold text-gray-700 mb-2 truncate">{g}</p>
+                  <div className="space-y-2">
+                    {groupedByRow[row][g].map((m) => (
+                      <div key={m.id} className="flex items-center gap-2 bg-violet-50 rounded-2xl px-3 py-2.5">
+                        <IconBadge colorKey={m.iconColorName} colorKey2={m.iconColorName2} size={30} />
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-bold text-gray-800 truncate">{m.name}</p>
+                          <p className="text-xs text-gray-400 truncate">{m.account ? `@${m.account}` : ""}</p>
+                        </div>
+                        <SoftButton tone="indigo" onClick={() => { onCopy(m); setCopiedId(m.id); }}>
+                          {copiedId === m.id ? "コピーしました" : "コピー"}
+                        </SoftButton>
+                      </div>
+                    ))}
+                  </div>
+                </Card>
+              ))}
+            </div>
+          )}
+        </div>
+      ))}
     </div>
   );
 }
