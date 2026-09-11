@@ -569,6 +569,15 @@ function SharedLibraryBrowser({ onCopy }) {
     setCopiedGroup(g);
   };
 
+  const removeFromShared = async (id) => {
+    try {
+      await apiDeleteSharedMember(id);
+      setList((prev) => prev.filter((m) => m.id !== id));
+    } catch {
+      /* 失敗しても一覧はそのまま。次回開いた時に再度試せる */
+    }
+  };
+
   return (
     <div>
       <p className="text-xs text-gray-400 mb-3">
@@ -625,6 +634,15 @@ function SharedLibraryBrowser({ onCopy }) {
                             <SoftButton tone="indigo" onClick={() => { onCopy(m); setCopiedId(m.id); }}>
                               {copiedId === m.id ? "コピーしました" : "コピー"}
                             </SoftButton>
+                            {m.isMine && (
+                              <button
+                                onClick={() => removeFromShared(m.id)}
+                                className="text-gray-300 flex-shrink-0 p-1"
+                                title="共有一覧から削除"
+                              >
+                                <Trash2 size={15} />
+                              </button>
+                            )}
                           </div>
                         ))}
                       </div>
