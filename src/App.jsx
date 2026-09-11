@@ -509,7 +509,9 @@ function SharedLibraryBrowser({ onCopy }) {
   const [list, setList] = useState([]);
   const [query, setQuery] = useState("");
   const [copiedId, setCopiedId] = useState(null);
+  const [copiedGroup, setCopiedGroup] = useState(null);
   const [collapsedRows, setCollapsedRows] = useState(() => loadLocal("sharedLibraryCollapsedRows", {}));
+  const [collapsedGroups, setCollapsedGroups] = useState(() => loadLocal("sharedLibraryCollapsedGroups", {}));
 
   useEffect(() => {
     apiLoadSharedMembers()
@@ -523,13 +525,15 @@ function SharedLibraryBrowser({ onCopy }) {
     return `${m.groupName || ""}${m.name || ""}`.includes(q);
   });
 
-  // 読み方の情報は無い（他の人のグループなので）ので、グループ名そのものの頭文字で分類する
+  // 登録した人がグループの読み方を設定していれば、それを使って分類する（例：「Utage!」→「うたげ」→あ行）
+  // 読み方が無い場合は、グループ名そのものの頭文字で分類する
   const groupedByRow = useMemo(() => {
     const map = {};
     KANA_ROWS.forEach((r) => { map[r] = {}; });
     filtered.forEach((m) => {
       const g = m.groupName || "（グループ未設定）";
-      const row = kanaRowOf(g[0]);
+      const readingText = m.groupReading || g;
+      const row = kanaRowOf(readingText[0]);
       if (!map[row][g]) map[row][g] = [];
       map[row][g].push(m);
     });
@@ -552,6 +556,17 @@ function SharedLibraryBrowser({ onCopy }) {
       saveLocal("sharedLibraryCollapsedRows", next);
       return next;
     });
+  };
+  const toggleGroup = (g) => {
+    setCollapsedGroups((prev) => {
+      const next = { ...prev, [g]: !prev[g] };
+      saveLocal("sharedLibraryCollapsedGroups", next);
+      return next;
+    });
+  };
+  const copyGroup = (g, groupMembers) => {
+    groupMembers.forEach((m) => onCopy(m));
+    setCopiedGroup(g);
   };
 
   return (
@@ -583,25 +598,40 @@ function SharedLibraryBrowser({ onCopy }) {
           </button>
           {!collapsedRows[row] && (
             <div className="space-y-3">
-              {Object.keys(groupedByRow[row]).sort((a, b) => a.localeCompare(b, "ja")).map((g) => (
-                <Card key={g}>
-                  <p className="text-xs font-bold text-gray-700 mb-2 truncate">{g}</p>
-                  <div className="space-y-2">
-                    {groupedByRow[row][g].map((m) => (
-                      <div key={m.id} className="flex items-center gap-2 bg-violet-50 rounded-2xl px-3 py-2.5">
-                        <IconBadge colorKey={m.iconColorName} colorKey2={m.iconColorName2} size={30} />
-                        <div className="flex-1 min-w-0">
-                          <p className="text-sm font-bold text-gray-800 truncate">{m.name}</p>
-                          <p className="text-xs text-gray-400 truncate">{m.account ? `@${m.account}` : ""}</p>
-                        </div>
-                        <SoftButton tone="indigo" onClick={() => { onCopy(m); setCopiedId(m.id); }}>
-                          {copiedId === m.id ? "コピーしました" : "コピー"}
+              {Object.keys(groupedByRow[row]).sort((a, b) => a.localeCompare(b, "ja")).map((g) => {
+                const groupMembers = groupedByRow[row][g];
+                return (
+                  <Card key={g}>
+                    <button className="w-full flex items-center justify-between" onClick={() => toggleGroup(g)}>
+                      <span className="text-xs font-bold text-gray-700 truncate">{g}</span>
+                      <span className="flex items-center gap-2 text-xs text-gray-400 flex-shrink-0">
+                        {groupMembers.length}人
+                        {collapsedGroups[g] ? <ChevronRight size={15} /> : <ChevronDown size={15} />}
+                      </span>
+                    </button>
+                    {!collapsedGroups[g] && (
+                      <div className="mt-2.5 space-y-2">
+                        <SoftButton tone="lavender" onClick={() => copyGroup(g, groupMembers)} className="w-full">
+                          <Download size={14} className="inline -mt-0.5 mr-1" />
+                          {copiedGroup === g ? "コピーしました" : `${g}全員をコピー（${groupMembers.length}人）`}
                         </SoftButton>
+                        {groupMembers.map((m) => (
+                          <div key={m.id} className="flex items-center gap-2 bg-violet-50 rounded-2xl px-3 py-2.5">
+                            <IconBadge colorKey={m.iconColorName} colorKey2={m.iconColorName2} size={30} />
+                            <div className="flex-1 min-w-0">
+                              <p className="text-sm font-bold text-gray-800 truncate">{m.name}</p>
+                              <p className="text-xs text-gray-400 truncate">{m.account ? `@${m.account}` : ""}</p>
+                            </div>
+                            <SoftButton tone="indigo" onClick={() => { onCopy(m); setCopiedId(m.id); }}>
+                              {copiedId === m.id ? "コピーしました" : "コピー"}
+                            </SoftButton>
+                          </div>
+                        ))}
                       </div>
-                    ))}
-                  </div>
-                </Card>
-              ))}
+                    )}
+                  </Card>
+                );
+              })}
             </div>
           )}
         </div>
@@ -831,7 +861,7 @@ function MembersPage({ members, setMembers, groupRegulations, setGroupRegulation
       return exists ? prev.map((x) => (x.id === clean.id ? clean : x)) : [...prev, clean];
     });
     if (publishToShared) {
-      apiPublishSharedMember(clean).catch(() => {
+      apiPublishSharedMember({ ...clean, groupReading: groupReadings[clean.groupName] || "" }).catch(() => {
         /* 失敗しても本体の保存には影響しない */
       });
     }
@@ -875,7 +905,7 @@ function MembersPage({ members, setMembers, groupRegulations, setGroupRegulation
     if (groupMembers.length === 0) return;
     setPublishingGroup(g);
     try {
-      await Promise.all(groupMembers.map((m) => apiPublishSharedMember(m)));
+      await Promise.all(groupMembers.map((m) => apiPublishSharedMember({ ...m, groupReading: groupReadings[g] || "" })));
     } catch {
       /* 一部失敗しても致命的ではないので、そのまま進める */
     }
