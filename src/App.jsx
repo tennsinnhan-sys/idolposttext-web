@@ -3064,8 +3064,8 @@ export default function App() {
             className="pointer-events-none absolute top-0 right-0 w-32 h-20"
             style={{ backgroundImage: "radial-gradient(#c4cbd9 1.2px, transparent 1.2px)", backgroundSize: "12px 12px" }}
           />
-          <div className="relative w-9 h-9 rounded-full bg-teal-300 text-white flex items-center justify-center flex-shrink-0">
-            <Sparkles size={17} />
+          <div className="relative w-9 h-9 rounded-full overflow-hidden flex-shrink-0">
+            <img src="/icon-512.png" alt="IdolPostText" className="w-full h-full object-cover" />
           </div>
           <div className="relative">
             <span className="font-bold text-xl tracking-tight text-gray-800">IdolPostText</span>
