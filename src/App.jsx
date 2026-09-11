@@ -112,7 +112,10 @@ function buildText(template, values, listValues = {}) {
     .join("\n");
 }
 
-import { apiConfigured, apiLoad, apiSave } from "./apiClient";
+import {
+  apiConfigured, apiLoad, apiSave, apiGetMe, apiLogout, loginUrl,
+  apiLoadSharedMembers, apiPublishSharedMember, apiDeleteSharedMember,
+} from "./apiClient";
 
 /* ------------------------------------------------------------------ */
 /* 永続化                                                               */
@@ -379,6 +382,7 @@ function emptyMember(groupName = "") {
 
 function MemberForm({ initial, onCancel, onSave, onDelete }) {
   const [m, setM] = useState(initial);
+  const [publishToShared, setPublishToShared] = useState(false);
   const set = (k) => (v) => setM((p) => ({ ...p, [k]: v }));
 
   return (
@@ -394,9 +398,13 @@ function MemberForm({ initial, onCancel, onSave, onDelete }) {
           onChangeColor={(k) => setM((p) => ({ ...p, iconColorName: k }))}
           onChangeColor2={(k) => setM((p) => ({ ...p, iconColorName2: k }))}
         />
+        <label className="flex items-center gap-1.5 text-xs text-gray-500">
+          <input type="checkbox" checked={publishToShared} onChange={(e) => setPublishToShared(e.target.checked)} />
+          共有一覧に載せる（他の人がコピーできるようになります）
+        </label>
       </div>
       <div className="flex gap-2 mt-5">
-        <SoftButton tone="indigo" onClick={() => onSave(m)} disabled={!m.name.trim()}>保存</SoftButton>
+        <SoftButton tone="indigo" onClick={() => onSave(m, publishToShared)} disabled={!m.name.trim()}>保存</SoftButton>
         <SoftButton tone="ghost" onClick={onCancel}>キャンセル</SoftButton>
         {onDelete && (
           <SoftButton tone="pink" onClick={() => onDelete(m.id)} className="ml-auto">
@@ -496,6 +504,53 @@ function OcrIntakeForm({ onCancel, onExtracted }) {
   );
 }
 
+function SharedLibraryBrowser({ onCopy }) {
+  const [status, setStatus] = useState("loading"); // loading | done | error
+  const [list, setList] = useState([]);
+  const [query, setQuery] = useState("");
+  const [copiedId, setCopiedId] = useState(null);
+
+  useEffect(() => {
+    apiLoadSharedMembers()
+      .then((rows) => { setList(rows); setStatus("done"); })
+      .catch(() => setStatus("error"));
+  }, []);
+
+  const filtered = list.filter((m) => {
+    const q = query.trim();
+    if (!q) return true;
+    return `${m.groupName || ""}${m.name || ""}`.includes(q);
+  });
+
+  return (
+    <div>
+      <p className="text-xs text-gray-400 mb-3">
+        他の人が「共有一覧に載せる」を選んで登録したメンバーの一覧です。タップするとあなたのメンバー一覧にそのままコピーされます。
+      </p>
+      <TextInput value={query} onChange={setQuery} placeholder="グループ名・名前で絞り込み" />
+      <div className="mt-3 space-y-2">
+        {status === "loading" && <p className="text-sm text-gray-400">読み込み中…</p>}
+        {status === "error" && <p className="text-sm text-rose-500">読み込みに失敗しました。</p>}
+        {status === "done" && filtered.length === 0 && <p className="text-sm text-gray-400">該当するメンバーはいません</p>}
+        {filtered.map((m) => (
+          <div key={m.id} className="flex items-center gap-2 bg-violet-50 rounded-2xl px-3 py-2.5">
+            <IconBadge colorKey={m.iconColorName} colorKey2={m.iconColorName2} size={30} />
+            <div className="flex-1 min-w-0">
+              <p className="text-sm font-bold text-gray-800 truncate">{m.name}</p>
+              <p className="text-xs text-gray-400 truncate">{m.groupName}{m.account ? `　@${m.account}` : ""}</p>
+            </div>
+            <SoftButton
+              tone="indigo"
+              onClick={() => { onCopy(m); setCopiedId(m.id); }}
+            >
+              {copiedId === m.id ? "コピーしました" : "コピー"}
+            </SoftButton>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
 
 function MembersPage({ members, setMembers, groupRegulations, setGroupRegulations, events, eventGroupRegulations, setEventGroupRegulations, groupReadings, setGroupReadings, groupOfficialX, setGroupOfficialX, groupAbbreviation, setGroupAbbreviation, groupHidden, setGroupHidden, onBack }) {
   const [openGroup, setOpenGroup] = useState(null);
@@ -710,13 +765,18 @@ function MembersPage({ members, setMembers, groupRegulations, setGroupRegulation
     setRenameConfirm(null);
   };
 
-  const saveMember = (m) => {
+  const saveMember = (m, publishToShared) => {
     const clean = { ...m };
     delete clean.__new;
     setMembers((prev) => {
       const exists = prev.some((x) => x.id === clean.id);
       return exists ? prev.map((x) => (x.id === clean.id ? clean : x)) : [...prev, clean];
     });
+    if (publishToShared) {
+      apiPublishSharedMember(clean).catch(() => {
+        /* 失敗しても本体の保存には影響しない */
+      });
+    }
     setEditing(null);
   };
   const quickSetMemberColor = (memberId, field, colorKey) => {
@@ -775,6 +835,19 @@ function MembersPage({ members, setMembers, groupRegulations, setGroupRegulation
           onCancel={() => setEditing(null)}
           onExtracted={(guess) => {
             setEditing({ ...emptyMember(openGroup || ""), name: guess.name, account: guess.account, __new: true });
+          }}
+        />
+      </div>
+    );
+  }
+
+  if (editing === "sharedLibrary") {
+    return (
+      <div>
+        <TopBar title="共有一覧からコピー" onBack={() => setEditing(null)} />
+        <SharedLibraryBrowser
+          onCopy={(member) => {
+            setMembers((prev) => [...prev, { ...member, id: uid() }]);
           }}
         />
       </div>
@@ -984,7 +1057,7 @@ function MembersPage({ members, setMembers, groupRegulations, setGroupRegulation
     <div>
       <TopBar title="メンバー一覧" onBack={onBack} />
       <p className="text-[11px] text-indigo-400 bg-indigo-50 rounded-2xl px-3 py-2 mb-3">
-        メンバー情報はこのアプリを使う全員で共有されます。誰でも追加・編集・削除できるのでご注意ください（イベント・テンプレート・投稿履歴・現在の選択状態も同様に共有されます）。
+        メンバー情報はあなたのアカウント専用です。「共有一覧に載せる」を選んで登録したメンバーだけ、他の人もコピーできるようになります。
       </p>
       <div className="flex flex-wrap items-center gap-2 mb-4">
         <SoftButton tone="indigo" onClick={() => setEditing("new")}>
@@ -995,6 +1068,9 @@ function MembersPage({ members, setMembers, groupRegulations, setGroupRegulation
         </SoftButton>
         <SoftButton tone="mint" onClick={() => setEditing("ocr")}>
           <Camera size={15} className="inline -mt-0.5 mr-1" />スクショから登録
+        </SoftButton>
+        <SoftButton tone="lavender" onClick={() => setEditing("sharedLibrary")}>
+          <Download size={15} className="inline -mt-0.5 mr-1" />共有一覧からコピー
         </SoftButton>
         {nonEmptyRows.length > 0 && (
           <button onClick={toggleAllRows} className="text-[11px] font-bold text-gray-500 bg-gray-100 rounded-xl px-2.5 py-1.5 flex items-center gap-1">
@@ -2141,6 +2217,13 @@ export default function App() {
   const [loaded, setLoaded] = useState(false);
   const [view, setView] = useState("home");
 
+  // ログイン状態：undefined=確認中、null=未ログイン、オブジェクト=ログイン中
+  const [user, setUser] = useState(undefined);
+  useEffect(() => {
+    if (!apiConfigured) { setUser(null); return; }
+    apiGetMe().then(setUser).catch(() => setUser(null));
+  }, []);
+
   const [members, setMembers] = useState([]);
   const [events, setEvents] = useState([]);
   const [templates, setTemplates] = useState([]);
@@ -2366,8 +2449,9 @@ export default function App() {
     if (typeof sel.activeTemplateContent === "string") setActiveTemplateContent(sel.activeTemplateContent);
   };
 
-  /* 初回読み込み */
+  /* 初回読み込み（ログイン後にのみ実行する） */
   useEffect(() => {
+    if (!user) return;
     (async () => {
       const [m, e, t, h, legacySel, gr, egr, grd, gox, gab, gh, egv, presetsLoaded, presetStatesLoaded, activePresetIdLoaded] = await Promise.all([
         loadShared("members", []),
@@ -2440,7 +2524,7 @@ export default function App() {
       }
       setLoaded(true);
     })();
-  }, []);
+  }, [user]);
 
   /* オフライン中に行った変更は手元に保存されるだけになるので、
      通信が回復したタイミングで、今手元にある内容を改めて送り直す（簡易的な再同期） */
@@ -2635,6 +2719,30 @@ export default function App() {
     reader.readAsText(file);
   };
 
+  if (user === undefined) {
+    return <div className="min-h-screen flex items-center justify-center bg-indigo-50 text-gray-400 text-sm">読み込み中…</div>;
+  }
+
+  if (!user) {
+    return (
+      <div className="min-h-screen bg-indigo-50 flex items-center justify-center px-4">
+        <div className="max-w-sm w-full bg-white rounded-2xl p-8 text-center">
+          <div className="w-12 h-12 rounded-full bg-teal-300 text-white flex items-center justify-center mx-auto mb-4">
+            <Sparkles size={22} />
+          </div>
+          <p className="font-bold text-xl text-gray-800 mb-1">IdolPostText</p>
+          <p className="text-xs text-gray-400 mb-6">Googleアカウントでログインすると、あなた専用のデータをPC・スマホ間で共有できます</p>
+          <a
+            href={loginUrl()}
+            className="block bg-indigo-500 text-white font-bold text-sm rounded-xl px-4 py-3"
+          >
+            Googleでログイン
+          </a>
+        </div>
+      </div>
+    );
+  }
+
   if (!loaded) {
     return <div className="min-h-screen flex items-center justify-center bg-indigo-50 text-gray-400 text-sm">読み込み中…</div>;
   }
@@ -2654,7 +2762,12 @@ export default function App() {
             <span className="font-bold text-xl tracking-tight text-gray-800">IdolPostText</span>
             <p className="text-[9px] font-semibold tracking-[0.2em] text-indigo-500 mt-0.5">POST TEXT GENERATOR</p>
           </div>
-          <span className="relative text-[10px] font-bold text-indigo-400 bg-indigo-100 rounded-full px-2 py-0.5 ml-auto">Web版</span>
+          <button
+            onClick={async () => { await apiLogout(); setUser(null); setLoaded(false); }}
+            className="relative text-[10px] font-bold text-indigo-400 bg-indigo-100 rounded-full px-2.5 py-1 ml-auto flex-shrink-0"
+          >
+            {user.name || user.email}｜ログアウト
+          </button>
         </div>
 
         {!isOnline && (
