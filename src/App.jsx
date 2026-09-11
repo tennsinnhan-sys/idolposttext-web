@@ -63,7 +63,7 @@ function highlightTemplateContent(text) {
     const inner = token.slice(1, -1);
     const isMulti = MULTI_PLACEHOLDERS.includes(inner) || inner === "メンバータグ一覧";
     const isSingle = SINGLE_PLACEHOLDERS.includes(inner);
-    const cls = isMulti ? "text-teal-700 font-bold" : isSingle ? "text-indigo-600 font-bold" : "text-gray-400";
+    const cls = isMulti ? "text-[#22C55E] font-bold" : isSingle ? "text-[#A855F7] font-bold" : "text-gray-400";
     nodes.push(<span key={key++} className={cls}>{token}</span>);
     lastIndex = regex.lastIndex;
   }
