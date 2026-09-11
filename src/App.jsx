@@ -811,6 +811,19 @@ function MembersPage({ members, setMembers, groupRegulations, setGroupRegulation
     });
   };
 
+  const [publishingGroup, setPublishingGroup] = useState(null);
+  const publishGroupToShared = async (g) => {
+    const groupMembers = members.filter((m) => m.groupName === g);
+    if (groupMembers.length === 0) return;
+    setPublishingGroup(g);
+    try {
+      await Promise.all(groupMembers.map((m) => apiPublishSharedMember(m)));
+    } catch {
+      /* 一部失敗しても致命的ではないので、そのまま進める */
+    }
+    setPublishingGroup(null);
+  };
+
   if (editing === "bulk") {
     return (
       <div>
@@ -1047,6 +1060,10 @@ function MembersPage({ members, setMembers, groupRegulations, setGroupRegulation
           </label>
           <SoftButton tone="lavender" onClick={() => addToGroup(g)} className="w-full">
             <Plus size={14} className="inline -mt-0.5 mr-1" />{g}に追加
+          </SoftButton>
+          <SoftButton tone="ghost" onClick={() => publishGroupToShared(g)} className="w-full">
+            <Upload size={14} className="inline -mt-0.5 mr-1" />
+            {publishingGroup === g ? "共有一覧に載せています…" : `${g}を共有一覧に載せる（${members.filter((m) => m.groupName === g).length}人）`}
           </SoftButton>
         </div>
       )}
