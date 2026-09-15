@@ -2254,7 +2254,15 @@ function HomePage({ members, events, memberSlots, setMemberSlots, selectedEventI
                           const id = e.target.value || null;
                           const m = members.find((mm) => mm.id === id);
                           updateSlot(i, { memberId: id, groupFilter: m ? m.groupName : slot.groupFilter });
-                          if (m) touchGroup(m.groupName);
+                          if (m) {
+                            touchGroup(m.groupName);
+                            if (Object.prototype.hasOwnProperty.call(groupLastEvent, m.groupName)) {
+                              const remembered = groupLastEvent[m.groupName];
+                              if (remembered === null || events.some((ev) => ev.id === remembered)) {
+                                setSelectedEventId(remembered);
+                              }
+                            }
+                          }
                           touchFavMember(id);
                         }}
                         className="appearance-none w-full text-sm font-bold text-gray-800 bg-transparent outline-none pr-6 truncate"
