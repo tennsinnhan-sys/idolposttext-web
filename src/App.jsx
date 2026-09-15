@@ -2235,7 +2235,16 @@ function HomePage({ members, events, memberSlots, setMemberSlots, selectedEventI
           <>
             <div className="space-y-2 mb-2">
               {memberSlots.map((slot, i) => {
-                const favMembers = members.filter((m) => m.favorite);
+                const favMembers = members
+                  .filter((m) => m.favorite)
+                  .sort((a, b) => {
+                    const ai = recentMembers.indexOf(a.id);
+                    const bi = recentMembers.indexOf(b.id);
+                    if (ai === -1 && bi === -1) return 0; // どちらも未使用なら元の順のまま
+                    if (ai === -1) return 1;
+                    if (bi === -1) return -1;
+                    return ai - bi; // recentMembersの先頭ほど最近使った
+                  });
                 return (
                   <div key={slot.id} className="flex items-center gap-2 bg-violet-50 rounded-2xl px-3 py-2">
                     <div className="relative flex-1 min-w-0">
