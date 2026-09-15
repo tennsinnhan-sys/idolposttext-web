@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useMemo } from "react";
 import {
-  Sparkles, Camera, GripVertical,
+  Sparkles, Camera, GripVertical, Star,
   Users, CalendarDays, FileText, History, Plus, X, Pencil, Trash2, Copy, Send,
   ChevronLeft, ChevronRight, ChevronUp, ChevronDown, ChevronsDown, ChevronsUp, Check, Eye, EyeOff, Download, Upload
 } from "lucide-react";
@@ -918,6 +918,9 @@ function MembersPage({ members, setMembers, groupRegulations, setGroupRegulation
   const quickSetMemberColor = (memberId, field, colorKey) => {
     setMembers((prev) => prev.map((x) => (x.id === memberId ? { ...x, [field]: colorKey } : x)));
   };
+  const toggleMemberFavorite = (memberId) => {
+    setMembers((prev) => prev.map((x) => (x.id === memberId ? { ...x, favorite: !x.favorite } : x)));
+  };
   const deleteMember = (id) => {
     setMembers((prev) => prev.filter((x) => x.id !== id));
     setEditing(null);
@@ -1153,6 +1156,9 @@ function MembersPage({ members, setMembers, groupRegulations, setGroupRegulation
                   <p className="text-sm font-bold text-gray-800 truncate">{m.name}</p>
                   <p className="text-xs text-gray-400 truncate">{m.account}</p>
                 </div>
+                <button onClick={() => toggleMemberFavorite(m.id)} className="p-1">
+                  <Star size={16} className={m.favorite ? "text-amber-400 fill-amber-400" : "text-gray-300"} />
+                </button>
                 <button onClick={() => moveMemberInGroup(g, i, -1)} disabled={i === 0} className="text-gray-300 disabled:opacity-30 p-1">
                   <ChevronUp size={15} />
                 </button>
@@ -1971,7 +1977,7 @@ function MemberSlotRow({ slot, members, groupNames, memberSortMode, recentMember
   );
 }
 
-function HomePage({ members, events, memberSlots, setMemberSlots, selectedEventId, setSelectedEventId, templates, activeTemplateContent, setActiveTemplateId, activeTemplateId, setActiveTemplateContent, values, listValues, recentGroups, touchGroup, groupLastEvent, rememberGroupEvent, groupReadings, groupHidden, groupRegulations, setGroupRegulations, eventGroupRegulations, setEventGroupRegulations, eventGroupVenue, setEventGroupVenue, memberSortMode, recentMembers, quickTemplateCount, quickTemplateLayout, presets, activePresetId, switchPreset, addPreset, renamePreset, deletePreset, onNavigate, recordHistory }) {
+function HomePage({ members, events, memberSlots, setMemberSlots, selectedEventId, setSelectedEventId, templates, activeTemplateContent, setActiveTemplateId, activeTemplateId, setActiveTemplateContent, values, listValues, recentGroups, touchGroup, groupLastEvent, rememberGroupEvent, groupReadings, groupHidden, groupRegulations, setGroupRegulations, eventGroupRegulations, setEventGroupRegulations, eventGroupVenue, setEventGroupVenue, memberSortMode, recentMembers, quickTemplateCount, quickTemplateLayout, presets, activePresetId, switchPreset, addPreset, renamePreset, deletePreset, movePreset, onNavigate, recordHistory }) {
   const groupNames = useMemo(() => {
     const all = dedupedNonEmpty(members.map((m) => m.groupName)).filter((g) => !groupHidden[g]);
     const used = recentGroups.filter((g) => all.includes(g));
@@ -2140,6 +2146,8 @@ function HomePage({ members, events, memberSlots, setMemberSlots, selectedEventI
 
   const quickTemplates = templates.slice(0, quickTemplateCount);
   const [presetEditMode, setPresetEditMode] = useState(false);
+  const [favTabActive, setFavTabActive] = useState(false);
+  const hasFavorites = members.some((m) => m.favorite);
 
   return (
     <div className="space-y-4">
@@ -2150,13 +2158,19 @@ function HomePage({ members, events, memberSlots, setMemberSlots, selectedEventI
             <div className="flex items-end gap-1.5">
               <div className="flex-1 min-w-0 relative">
                 <div className="flex items-end gap-0.5 overflow-x-auto">
-                  {presets.map((p) => (
+                  {presets.map((p, i) => (
                     <div key={p.id} className="flex-shrink-0 flex items-center gap-1 bg-violet-100 rounded-t-2xl px-2.5 py-2">
+                      <button onClick={() => movePreset(p.id, -1)} disabled={i === 0} className="text-gray-400 disabled:opacity-30">
+                        <ChevronLeft size={13} />
+                      </button>
                       <input
                         value={p.name}
                         onChange={(e) => renamePreset(p.id, e.target.value)}
                         className="text-xs font-bold text-gray-500 bg-transparent outline-none w-16"
                       />
+                      <button onClick={() => movePreset(p.id, 1)} disabled={i === presets.length - 1} className="text-gray-400 disabled:opacity-30">
+                        <ChevronRight size={13} />
+                      </button>
                       {presets.length > 1 && (
                         <button onClick={() => deletePreset(p.id)} className="text-gray-400"><X size={13} /></button>
                       )}
@@ -2174,12 +2188,22 @@ function HomePage({ members, events, memberSlots, setMemberSlots, selectedEventI
             </div>
           ) : (
             <div className="flex items-end gap-0.5 overflow-x-auto">
+              {hasFavorites && (
+                <button
+                  onClick={() => setFavTabActive(true)}
+                  className={`flex-shrink-0 rounded-t-2xl px-4 py-2.5 flex items-center justify-center ${
+                    favTabActive ? "bg-white text-amber-400 shadow-[0_-2px_6px_rgba(70,80,160,0.08)] relative z-10" : "bg-violet-100 text-gray-400"
+                  }`}
+                >
+                  <Star size={15} className={favTabActive ? "fill-amber-400" : ""} />
+                </button>
+              )}
               {presets.map((p) => (
                 <button
                   key={p.id}
-                  onClick={() => switchPreset(p.id)}
+                  onClick={() => { setFavTabActive(false); switchPreset(p.id); }}
                   className={`flex-shrink-0 text-xs font-bold rounded-t-2xl px-4 py-2.5 truncate max-w-[110px] ${
-                    activePresetId === p.id ? "bg-white text-indigo-600 shadow-[0_-2px_6px_rgba(70,80,160,0.08)] relative z-10" : "bg-violet-100 text-gray-400"
+                    !favTabActive && activePresetId === p.id ? "bg-white text-indigo-600 shadow-[0_-2px_6px_rgba(70,80,160,0.08)] relative z-10" : "bg-violet-100 text-gray-400"
                   }`}
                 >
                   {p.name}
@@ -2207,6 +2231,40 @@ function HomePage({ members, events, memberSlots, setMemberSlots, selectedEventI
         />
         {groupNames.length === 0 ? (
           <p className="text-sm text-gray-400">保存済みメンバーはいません。まずは「一覧を管理」から登録してください。</p>
+        ) : favTabActive ? (
+          <>
+            <div className="space-y-2 mb-2">
+              {memberSlots.map((slot, i) => {
+                const favMembers = members.filter((m) => m.favorite);
+                return (
+                  <div key={slot.id} className="flex items-center gap-2 bg-violet-50 rounded-2xl px-3 py-2">
+                    <div className="relative flex-1 min-w-0">
+                      <select
+                        value={slot.memberId || ""}
+                        onChange={(e) => {
+                          const id = e.target.value || null;
+                          const m = members.find((mm) => mm.id === id);
+                          updateSlot(i, { memberId: id, groupFilter: m ? m.groupName : slot.groupFilter });
+                          if (m) touchGroup(m.groupName);
+                        }}
+                        className="appearance-none w-full text-sm font-bold text-gray-800 bg-transparent outline-none pr-6 truncate"
+                      >
+                        <option value="">選択なし</option>
+                        {favMembers.map((m) => (
+                          <option key={m.id} value={m.id}>{m.name}　({m.groupName})</option>
+                        ))}
+                      </select>
+                      <ChevronDown size={13} className="pointer-events-none absolute right-1 top-1/2 -translate-y-1/2 text-gray-400" />
+                    </div>
+                    {memberSlots.length > 1 && (
+                      <button onClick={() => removeSlot(i)} className="text-gray-300 p-1 flex-shrink-0"><X size={15} /></button>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+            <button onClick={addSlot} className="text-xs font-bold text-indigo-500">＋ メンバーを追加</button>
+          </>
         ) : (
           <>
             <div className="space-y-2 mb-2">
@@ -2722,6 +2780,16 @@ export default function App() {
       if (fallback) switchPreset(fallback.id);
     }
   };
+  const movePreset = (id, dir) => {
+    setPresets((prev) => {
+      const index = prev.findIndex((p) => p.id === id);
+      const targetIndex = index + dir;
+      if (index === -1 || targetIndex < 0 || targetIndex >= prev.length) return prev;
+      const next = [...prev];
+      [next[index], next[targetIndex]] = [next[targetIndex], next[index]];
+      return next;
+    });
+  };
   const switchPreset = (presetId) => {
     if (presetId === activePresetId) return;
     if (presetSaveTimer.current) {
@@ -3144,6 +3212,7 @@ export default function App() {
             addPreset={addPreset}
             renamePreset={renamePreset}
             deletePreset={deletePreset}
+            movePreset={movePreset}
             onNavigate={setView}
             recordHistory={recordHistory}
           />
