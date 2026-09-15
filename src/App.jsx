@@ -1977,7 +1977,7 @@ function MemberSlotRow({ slot, members, groupNames, memberSortMode, recentMember
   );
 }
 
-function HomePage({ members, events, memberSlots, setMemberSlots, selectedEventId, setSelectedEventId, templates, activeTemplateContent, setActiveTemplateId, activeTemplateId, setActiveTemplateContent, values, listValues, recentGroups, touchGroup, groupLastEvent, rememberGroupEvent, groupReadings, groupHidden, groupRegulations, setGroupRegulations, eventGroupRegulations, setEventGroupRegulations, eventGroupVenue, setEventGroupVenue, memberSortMode, recentMembers, quickTemplateCount, quickTemplateLayout, presets, activePresetId, switchPreset, addPreset, renamePreset, deletePreset, movePreset, onNavigate, recordHistory }) {
+function HomePage({ members, events, memberSlots, setMemberSlots, selectedEventId, setSelectedEventId, templates, activeTemplateContent, setActiveTemplateId, activeTemplateId, setActiveTemplateContent, values, listValues, recentGroups, touchGroup, groupLastEvent, rememberGroupEvent, groupReadings, groupHidden, groupRegulations, setGroupRegulations, eventGroupRegulations, setEventGroupRegulations, eventGroupVenue, setEventGroupVenue, memberSortMode, recentMembers, favRecentOrder, touchFavMember, quickTemplateCount, quickTemplateLayout, presets, activePresetId, switchPreset, addPreset, renamePreset, deletePreset, movePreset, onNavigate, recordHistory }) {
   const groupNames = useMemo(() => {
     const all = dedupedNonEmpty(members.map((m) => m.groupName)).filter((g) => !groupHidden[g]);
     const used = recentGroups.filter((g) => all.includes(g));
@@ -2238,12 +2238,12 @@ function HomePage({ members, events, memberSlots, setMemberSlots, selectedEventI
                 const favMembers = members
                   .filter((m) => m.favorite)
                   .sort((a, b) => {
-                    const ai = recentMembers.indexOf(a.id);
-                    const bi = recentMembers.indexOf(b.id);
-                    if (ai === -1 && bi === -1) return 0; // どちらも未使用なら元の順のまま
+                    const ai = favRecentOrder.indexOf(a.id);
+                    const bi = favRecentOrder.indexOf(b.id);
+                    if (ai === -1 && bi === -1) return 0; // どちらも未選択なら元の順のまま
                     if (ai === -1) return 1;
                     if (bi === -1) return -1;
-                    return ai - bi; // recentMembersの先頭ほど最近使った
+                    return ai - bi; // favRecentOrderの先頭ほど直近選択した
                   });
                 return (
                   <div key={slot.id} className="flex items-center gap-2 bg-violet-50 rounded-2xl px-3 py-2">
@@ -2255,6 +2255,7 @@ function HomePage({ members, events, memberSlots, setMemberSlots, selectedEventI
                           const m = members.find((mm) => mm.id === id);
                           updateSlot(i, { memberId: id, groupFilter: m ? m.groupName : slot.groupFilter });
                           if (m) touchGroup(m.groupName);
+                          touchFavMember(id);
                         }}
                         className="appearance-none w-full text-sm font-bold text-gray-800 bg-transparent outline-none pr-6 truncate"
                       >
@@ -2578,6 +2579,7 @@ export default function App() {
   const [recentGroups, setRecentGroups] = useState(() => loadLocal("recentGroups", []));
   const [groupLastEvent, setGroupLastEvent] = useState(() => loadLocal("groupLastEvent", {}));
   const [recentMembers, setRecentMembers] = useState(() => loadLocal("recentMembers", []));
+  const [favRecentOrder, setFavRecentOrder] = useState(() => loadLocal("favRecentOrder", []));
   const [memberSortMode, setMemberSortModeRaw] = useState(() => loadLocal("memberSortMode", "manual")); // 'manual' | 'frequent'
   const setMemberSortMode = (mode) => {
     setMemberSortModeRaw(mode);
@@ -2600,6 +2602,16 @@ export default function App() {
     setRecentMembers((prev) => {
       const next = [memberId, ...prev.filter((id) => id !== memberId)];
       saveLocal("recentMembers", next);
+      return next;
+    });
+  };
+
+  // ☆タブでプルダウン選択した瞬間に、その人を☆タブ内の並びの先頭にする
+  const touchFavMember = (memberId) => {
+    if (!memberId) return;
+    setFavRecentOrder((prev) => {
+      const next = [memberId, ...prev.filter((id) => id !== memberId)];
+      saveLocal("favRecentOrder", next);
       return next;
     });
   };
@@ -3213,6 +3225,8 @@ export default function App() {
             setEventGroupVenue={setEventGroupVenue}
             memberSortMode={memberSortMode}
             recentMembers={recentMembers}
+            favRecentOrder={favRecentOrder}
+            touchFavMember={touchFavMember}
             quickTemplateCount={quickTemplateCount}
             quickTemplateLayout={quickTemplateLayout}
             presets={presets}
