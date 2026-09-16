@@ -1977,7 +1977,7 @@ function MemberSlotRow({ slot, members, groupNames, memberSortMode, recentMember
   );
 }
 
-function HomePage({ members, events, memberSlots, setMemberSlots, selectedEventId, setSelectedEventId, templates, activeTemplateContent, setActiveTemplateId, activeTemplateId, setActiveTemplateContent, values, listValues, recentGroups, touchGroup, groupLastEvent, rememberGroupEvent, groupReadings, groupHidden, groupRegulations, setGroupRegulations, eventGroupRegulations, setEventGroupRegulations, eventGroupVenue, setEventGroupVenue, memberSortMode, recentMembers, favRecentOrder, touchFavMember, quickTemplateCount, quickTemplateLayout, presets, activePresetId, switchPreset, addPreset, renamePreset, deletePreset, movePreset, onNavigate, recordHistory }) {
+function HomePage({ members, events, memberSlots, setMemberSlots, selectedEventId, setSelectedEventId, templates, activeTemplateContent, setActiveTemplateId, activeTemplateId, setActiveTemplateContent, values, listValues, recentGroups, touchGroup, groupLastEvent, rememberGroupEvent, groupReadings, groupHidden, groupRegulations, setGroupRegulations, eventGroupRegulations, setEventGroupRegulations, eventGroupVenue, setEventGroupVenue, memberSortMode, recentMembers, favRecentOrder, touchFavMember, quickTemplateCount, quickTemplateLayout, presets, activePresetId, switchPreset, addPreset, renamePreset, deletePreset, movePreset, favTabActive, enterFavTab, exitFavTab, onNavigate, recordHistory }) {
   const groupNames = useMemo(() => {
     const all = dedupedNonEmpty(members.map((m) => m.groupName)).filter((g) => !groupHidden[g]);
     const used = recentGroups.filter((g) => all.includes(g));
@@ -2146,7 +2146,6 @@ function HomePage({ members, events, memberSlots, setMemberSlots, selectedEventI
 
   const quickTemplates = templates.slice(0, quickTemplateCount);
   const [presetEditMode, setPresetEditMode] = useState(false);
-  const [favTabActive, setFavTabActive] = useState(false);
   const hasFavorites = members.some((m) => m.favorite);
 
   return (
@@ -2190,7 +2189,7 @@ function HomePage({ members, events, memberSlots, setMemberSlots, selectedEventI
             <div className="flex items-end gap-0.5 overflow-x-auto">
               {hasFavorites && (
                 <button
-                  onClick={() => setFavTabActive(true)}
+                  onClick={enterFavTab}
                   className={`flex-shrink-0 rounded-t-2xl px-4 py-2.5 flex items-center justify-center ${
                     favTabActive ? "bg-white text-amber-400 shadow-[0_-2px_6px_rgba(70,80,160,0.08)] relative z-10" : "bg-violet-100 text-gray-400"
                   }`}
@@ -2201,7 +2200,7 @@ function HomePage({ members, events, memberSlots, setMemberSlots, selectedEventI
               {presets.map((p) => (
                 <button
                   key={p.id}
-                  onClick={() => { setFavTabActive(false); switchPreset(p.id); }}
+                  onClick={() => (favTabActive ? exitFavTab(p.id) : switchPreset(p.id))}
                   className={`flex-shrink-0 text-xs font-bold rounded-t-2xl px-4 py-2.5 truncate max-w-[110px] ${
                     !favTabActive && activePresetId === p.id ? "bg-white text-indigo-600 shadow-[0_-2px_6px_rgba(70,80,160,0.08)] relative z-10" : "bg-violet-100 text-gray-400"
                   }`}
@@ -2579,6 +2578,10 @@ export default function App() {
   const [presets, setPresetsRaw] = useState([]);
   const [presetStates, setPresetStatesRaw] = useState({});
   const [activePresetId, setActivePresetIdRaw] = useState(null);
+  const [favTabActive, setFavTabActive] = useState(false);
+  const [favSelection, setFavSelectionRaw] = useState(null);
+  const favSelectionRef = useRef(null);
+  useEffect(() => { favSelectionRef.current = favSelection; }, [favSelection]);
 
   const [memberSlots, setMemberSlots] = useState([{ id: uid(), groupFilter: null, memberId: null }]);
   const [selectedEventId, setSelectedEventId] = useState(null);
@@ -2833,6 +2836,36 @@ export default function App() {
     applySelection(nextStates[presetId]);
   };
 
+  // ☆タブに入る：今のプリセットの選択状態をpresetStatesにきちんと保存してから、☆タブ専用の選択状態(favSelection)を読み込む
+  const enterFavTab = () => {
+    if (favTabActive) return;
+    if (presetSaveTimer.current) {
+      clearTimeout(presetSaveTimer.current);
+      presetSaveTimer.current = null;
+    }
+    const nextStates = { ...presetStatesRef.current, [activePresetId]: currentSelectionPayload() };
+    setPresetStatesRaw(nextStates);
+    saveShared("presetStates", nextStates);
+    setFavTabActive(true);
+    applySelection(favSelectionRef.current || { memberIds: [], eventId: null });
+  };
+
+  // ☆タブから出る：今の選択状態(お気に入りで選んだ内容)はfavSelectionだけに保存し、
+  // 元のプリセット(presetStates)には一切書き戻さない（プリセット側は enterFavTab の時点のまま保つ）
+  const exitFavTab = (nextPresetId) => {
+    if (presetSaveTimer.current) {
+      clearTimeout(presetSaveTimer.current);
+      presetSaveTimer.current = null;
+    }
+    const favPayload = currentSelectionPayload();
+    setFavSelectionRaw(favPayload);
+    saveShared("favSelection", favPayload);
+    setFavTabActive(false);
+    setActivePresetIdRaw(nextPresetId);
+    saveShared("activePresetId", nextPresetId);
+    applySelection(presetStatesRef.current[nextPresetId]);
+  };
+
   // 選択中の状態（メンバー選択・イベント選択・テンプレート編集内容）を、起動時に一度だけ復元する
   const applySelection = (sel) => {
     if (!sel) return;
@@ -2850,7 +2883,7 @@ export default function App() {
   useEffect(() => {
     if (!user) return;
     (async () => {
-      const [m, e, t, h, legacySel, gr, egr, grd, gox, gab, gh, gns, egv, presetsLoaded, presetStatesLoaded, activePresetIdLoaded] = await Promise.all([
+      const [m, e, t, h, legacySel, gr, egr, grd, gox, gab, gh, gns, egv, presetsLoaded, presetStatesLoaded, activePresetIdLoaded, favSelectionLoaded] = await Promise.all([
         loadShared("members", []),
         loadShared("events", []),
         loadShared("templates", []),
@@ -2867,6 +2900,7 @@ export default function App() {
         loadShared("presets", []),
         loadShared("presetStates", {}),
         loadShared("activePresetId", null),
+        loadShared("favSelection", null),
       ]);
 
       setMembers(m);
@@ -2906,6 +2940,8 @@ export default function App() {
       }
       setPresetStatesRaw(finalPresetStates);
       presetStatesRef.current = finalPresetStates;
+      setFavSelectionRaw(favSelectionLoaded);
+      favSelectionRef.current = favSelectionLoaded;
 
       const validActiveId = finalPresets.some((p) => p.id === activePresetIdLoaded) ? activePresetIdLoaded : finalPresets[0].id;
       setActivePresetIdRaw(validActiveId);
@@ -2986,7 +3022,18 @@ export default function App() {
      テンプレート編集は1文字ごとに変わるので、少し待ってからまとめて保存する（デバウンス）。 */
   const presetSaveTimer = useRef(null);
   useEffect(() => {
-    if (!loaded || !activePresetId) return;
+    if (!loaded) return;
+    if (favTabActive) {
+      // ☆タブ中は、プリセット側(presetStates)には一切保存せず、favSelectionだけを更新する
+      const payload = currentSelectionPayload();
+      if (presetSaveTimer.current) clearTimeout(presetSaveTimer.current);
+      presetSaveTimer.current = setTimeout(() => {
+        setFavSelectionRaw(payload);
+        saveShared("favSelection", payload);
+      }, 600);
+      return () => clearTimeout(presetSaveTimer.current);
+    }
+    if (!activePresetId) return;
     const payload = currentSelectionPayload();
     if (presetSaveTimer.current) clearTimeout(presetSaveTimer.current);
     presetSaveTimer.current = setTimeout(() => {
@@ -2997,7 +3044,7 @@ export default function App() {
       });
     }, 600);
     return () => clearTimeout(presetSaveTimer.current);
-  }, [memberSlots, selectedEventId, activeTemplateId, activeTemplateContent, loaded, activePresetId]);
+  }, [memberSlots, selectedEventId, activeTemplateId, activeTemplateContent, loaded, activePresetId, favTabActive]);
 
   /* テンプレ用の値（プレースホルダー置換） */
   const selectedMembers = useMemo(
@@ -3244,6 +3291,9 @@ export default function App() {
             renamePreset={renamePreset}
             deletePreset={deletePreset}
             movePreset={movePreset}
+            favTabActive={favTabActive}
+            enterFavTab={enterFavTab}
+            exitFavTab={exitFavTab}
             onNavigate={setView}
             recordHistory={recordHistory}
           />
