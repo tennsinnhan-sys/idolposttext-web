@@ -2191,10 +2191,10 @@ function HomePage({ members, events, memberSlots, setMemberSlots, selectedEventI
                 <button
                   onClick={enterFavTab}
                   className={`flex-shrink-0 rounded-t-2xl px-4 py-2.5 flex items-center justify-center ${
-                    favTabActive ? "bg-white text-amber-400 shadow-[0_-2px_6px_rgba(70,80,160,0.08)] relative z-10" : "bg-violet-100 text-gray-400"
+                    favTabActive ? "bg-white text-[#38BDF8] shadow-[0_-2px_6px_rgba(70,80,160,0.08)] relative z-10" : "bg-violet-100 text-gray-400"
                   }`}
                 >
-                  <Star size={15} className={favTabActive ? "fill-amber-400" : ""} />
+                  <Star size={15} className={favTabActive ? "fill-[#38BDF8]" : ""} />
                 </button>
               )}
               {presets.map((p) => (
