@@ -1282,7 +1282,7 @@ function MembersPage({ members, setMembers, groupRegulations, setGroupRegulation
           value={memberSearchQuery}
           onChange={(e) => setMemberSearchQuery(e.target.value)}
           placeholder="名前・Xアカウント・グループ名で検索"
-          className="w-full text-sm bg-violet-50 rounded-2xl pl-9 pr-9 py-2.5 outline-none"
+          className="w-full text-sm bg-white border border-gray-200 rounded-2xl pl-9 pr-9 py-2.5 outline-none focus:border-indigo-300"
         />
         {memberSearchQuery && (
           <button onClick={() => setMemberSearchQuery("")} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-300">
