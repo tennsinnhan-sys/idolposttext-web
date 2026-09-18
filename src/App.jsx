@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useMemo } from "react";
 import {
-  Sparkles, Camera, GripVertical, Star,
+  Sparkles, Camera, GripVertical, Star, Search,
   Users, CalendarDays, FileText, History, Plus, X, Pencil, Trash2, Copy, Send,
   ChevronLeft, ChevronRight, ChevronUp, ChevronDown, ChevronsDown, ChevronsUp, Check, Eye, EyeOff, Download, Upload
 } from "lucide-react";
@@ -690,6 +690,7 @@ function MembersPage({ members, setMembers, groupRegulations, setGroupRegulation
   const [editing, setEditing] = useState(null); // 'new' | member | null
   const [showHiddenGroups, setShowHiddenGroups] = useState(false);
   const [colorPickerMemberId, setColorPickerMemberId] = useState(null);
+  const [memberSearchQuery, setMemberSearchQuery] = useState("");
 
   // 撮影レギュレーション・読み方・公式X・略称は入力のたびに即保存すると同期が追いつかないので、
   // 入力中はローカルの下書きだけを更新し、少し待ってからまとめて保存する
@@ -822,6 +823,18 @@ function MembersPage({ members, setMembers, groupRegulations, setGroupRegulation
   );
   const groups = useMemo(() => allGroups.filter((g) => !groupHidden[g]), [allGroups, groupHidden]);
   const hiddenGroupList = useMemo(() => allGroups.filter((g) => groupHidden[g]), [allGroups, groupHidden]);
+
+  // 検索ボックス：名前・Xアカウント・個人タグ・グループ名のいずれかに部分一致。
+  // グループ名にヒットした場合は、そのグループの全メンバーを含める
+  const searchQuery = memberSearchQuery.trim().toLowerCase();
+  const searchResults = useMemo(() => {
+    if (!searchQuery) return null;
+    const matchedGroupNames = new Set(allGroups.filter((g) => g.toLowerCase().includes(searchQuery)));
+    return members.filter((m) => {
+      if (matchedGroupNames.has(m.groupName)) return true;
+      return [m.name, m.account, m.personalTag, m.groupName].some((v) => (v || "").toLowerCase().includes(searchQuery));
+    });
+  }, [searchQuery, members, allGroups]);
 
   // グループが増えてきた時のために、読み方の頭文字で「あ行・か行…」に分類して開閉できるようにする
   // （開閉状態はこのブラウザだけの個人設定として保存する）
@@ -1263,39 +1276,94 @@ function MembersPage({ members, setMembers, groupRegulations, setGroupRegulation
         </div>
       </div>
 
-      {groups.length === 0 && <p className="text-sm text-gray-400">保存済みメンバーはいません</p>}
-
-      {nonEmptyRows.map((row) => (
-        <div key={row} className="mb-3">
-          <button onClick={() => toggleRow(row)} className="w-full flex items-center justify-between bg-violet-100 rounded-2xl px-4 py-2.5 mb-2">
-            <span className="text-xs font-bold text-indigo-700">
-              {row === "他" ? "その他" : `${row}行`}（{groupedByRow[row].length}）
-            </span>
-            {collapsedRows[row] ? <ChevronRight size={15} className="text-indigo-400" /> : <ChevronDown size={15} className="text-indigo-400" />}
+      <div className="relative mb-4">
+        <Search size={15} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-300 pointer-events-none" />
+        <input
+          value={memberSearchQuery}
+          onChange={(e) => setMemberSearchQuery(e.target.value)}
+          placeholder="名前・Xアカウント・グループ名で検索"
+          className="w-full text-sm bg-violet-50 rounded-2xl pl-9 pr-9 py-2.5 outline-none"
+        />
+        {memberSearchQuery && (
+          <button onClick={() => setMemberSearchQuery("")} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-300">
+            <X size={15} />
           </button>
-          {!collapsedRows[row] && (
-            <div className="space-y-3">
-              {groupedByRow[row].map((g) => renderGroupCard(g, false))}
+        )}
+      </div>
+
+      {searchResults ? (
+        <div className="space-y-2">
+          {searchResults.length === 0 && <p className="text-sm text-gray-400">「{memberSearchQuery}」に一致するメンバーはいません</p>}
+          {searchResults.map((m) => (
+            <div key={m.id} className="bg-violet-50 rounded-2xl px-3 py-2">
+              <div className="flex items-center gap-2">
+                <button onClick={() => setColorPickerMemberId((prev) => (prev === m.id ? null : m.id))}>
+                  <IconBadge colorKey={m.iconColorName} colorKey2={m.iconColorName2} size={30} />
+                </button>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-bold text-gray-800 truncate">{m.name}</p>
+                  <p className="text-xs text-gray-400 truncate">{m.groupName}　{m.account}</p>
+                </div>
+                <button onClick={() => toggleMemberFavorite(m.id)} className="p-1">
+                  <Star size={16} className={m.favorite ? "text-amber-400 fill-amber-400" : "text-gray-300"} />
+                </button>
+                <button onClick={() => setEditing(m)} className="p-1.5 text-indigo-500"><Pencil size={15} /></button>
+              </div>
+              {colorPickerMemberId === m.id && (
+                <div className="mt-2.5 pt-2.5 border-t border-dashed border-indigo-200">
+                  <p className="text-[10px] text-indigo-400 mb-1.5">1色目</p>
+                  <div className="flex flex-wrap gap-1.5 mb-2.5">
+                    {COLORS.map((c) => (
+                      <button
+                        key={c.key}
+                        onClick={() => quickSetMemberColor(m.id, "iconColorName", c.key)}
+                        style={{ backgroundColor: c.hex }}
+                        className={`w-6 h-6 rounded-full ring-1 ring-gray-300 ${m.iconColorName === c.key ? "ring-2 ring-offset-1 ring-indigo-500" : ""}`}
+                      />
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      ) : (
+        <>
+          {groups.length === 0 && <p className="text-sm text-gray-400">保存済みメンバーはいません</p>}
+
+          {nonEmptyRows.map((row) => (
+            <div key={row} className="mb-3">
+              <button onClick={() => toggleRow(row)} className="w-full flex items-center justify-between bg-violet-100 rounded-2xl px-4 py-2.5 mb-2">
+                <span className="text-xs font-bold text-indigo-700">
+                  {row === "他" ? "その他" : `${row}行`}（{groupedByRow[row].length}）
+                </span>
+                {collapsedRows[row] ? <ChevronRight size={15} className="text-indigo-400" /> : <ChevronDown size={15} className="text-indigo-400" />}
+              </button>
+              {!collapsedRows[row] && (
+                <div className="space-y-3">
+                  {groupedByRow[row].map((g) => renderGroupCard(g, false))}
+                </div>
+              )}
+            </div>
+          ))}
+
+          {hiddenGroupList.length > 0 && (
+            <div className="mt-4">
+              <button
+                className="flex items-center gap-1.5 text-xs text-gray-400"
+                onClick={() => setShowHiddenGroups((v) => !v)}
+              >
+                {showHiddenGroups ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
+                非表示のグループ（{hiddenGroupList.length}）
+              </button>
+              {showHiddenGroups && (
+                <div className="mt-2 space-y-3">
+                  {hiddenGroupList.map((g) => renderGroupCard(g, true))}
+                </div>
+              )}
             </div>
           )}
-        </div>
-      ))}
-
-      {hiddenGroupList.length > 0 && (
-        <div className="mt-4">
-          <button
-            className="flex items-center gap-1.5 text-xs text-gray-400"
-            onClick={() => setShowHiddenGroups((v) => !v)}
-          >
-            {showHiddenGroups ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
-            非表示のグループ（{hiddenGroupList.length}）
-          </button>
-          {showHiddenGroups && (
-            <div className="mt-2 space-y-3">
-              {hiddenGroupList.map((g) => renderGroupCard(g, true))}
-            </div>
-          )}
-        </div>
+        </>
       )}
 
       {renameConfirm && (
