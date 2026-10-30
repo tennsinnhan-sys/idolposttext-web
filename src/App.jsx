@@ -2152,7 +2152,7 @@ function HomePage({ members, events, memberSlots, setMemberSlots, selectedEventI
   const updateSlot = (index, patch) => {
     setMemberSlots((prev) => prev.map((s, i) => (i === index ? { ...s, ...patch } : s)));
   };
-  const [carryGroupOnAdd, setCarryGroupOnAdd] = useState(false);
+  const [carryGroupOnAdd, setCarryGroupOnAdd] = useState(true);
   const addSlot = () => {
     setMemberSlots((prev) => {
       const lastGroup = carryGroupOnAdd ? (prev[prev.length - 1]?.groupFilter ?? null) : null;
