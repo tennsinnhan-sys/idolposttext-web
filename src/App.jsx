@@ -249,12 +249,20 @@ function SoftButton({ children, onClick, tone = "indigo", disabled, className = 
   );
 }
 
-function TextInput({ value, onChange, placeholder, type = "text" }) {
+function TextInput({ value, onChange, placeholder, type = "text", onBlur, onEnter }) {
   return (
     <input
       type={type}
       value={value}
       onChange={(e) => onChange(e.target.value)}
+      onBlur={onBlur}
+      onKeyDown={onEnter ? (e) => {
+        // 変換中（IME入力中）のEnterは確定操作なので無視し、変換確定後のEnterだけ「入力完了」として扱う
+        if (e.key === "Enter" && !e.nativeEvent.isComposing) {
+          e.preventDefault();
+          e.currentTarget.blur();
+        }
+      } : undefined}
       placeholder={placeholder}
       className="w-full rounded-2xl bg-violet-50 focus:bg-white focus:ring-2 ring-indigo-300 outline-none px-4 py-3 text-[15px] text-gray-800 placeholder-gray-400 transition"
     />
@@ -757,12 +765,17 @@ function MembersPage({ members, setMembers, groupRegulations, setGroupRegulation
     }, 500);
   };
 
+  // 読み方は、入力の途中で保存すると「あ行・か行…」の振り分けが変わってグループの位置が飛んでしまうため、
+  // 入力中は下書きだけを更新し、入力欄を離れた時（またはEnter）にまとめて保存する。
+  // readingSaveTimer は「未保存の入力がある」ことを示す目印として使う
   const changeReadingDraft = (g, value) => {
     setReadingDraft(value);
-    if (readingSaveTimer.current) clearTimeout(readingSaveTimer.current);
-    readingSaveTimer.current = setTimeout(() => {
-      setGroupReadings((prev) => ({ ...prev, [g]: value }));
-    }, 500);
+    readingSaveTimer.current = true;
+  };
+  const commitReadingDraft = (g) => {
+    if (!readingSaveTimer.current) return;
+    readingSaveTimer.current = null;
+    setGroupReadings((prev) => ({ ...prev, [g]: readingDraft }));
   };
 
   // イベント別のレギュレーション上書き（このグループ限定）の編集
@@ -1079,6 +1092,8 @@ function MembersPage({ members, setMembers, groupRegulations, setGroupRegulation
           <TextInput
             value={readingDraft}
             onChange={(v) => changeReadingDraft(g, v)}
+            onBlur={() => commitReadingDraft(g)}
+            onEnter
             placeholder="読み方（ひらがな・カタカナ／並び替えに使用）"
           />
           <TextInput
