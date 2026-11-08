@@ -365,6 +365,9 @@ function BulkMemberForm({ onCancel, onSave, existingMembers = [] }) {
         newOnes.push({ ...r, groupName });
       });
       setNotion({ status: "ready", newOnes, skipped, total: rows.length, error: "" });
+      setPicked(new Set());
+      setOpenGroups(new Set());
+      setNotionFilter("");
     } catch (e) {
       const messages = {
         401: "ログインが切れています。いったんログアウトして、もう一度ログインしてください。",
@@ -377,10 +380,46 @@ function BulkMemberForm({ onCancel, onSave, existingMembers = [] }) {
     }
   };
 
+  // 取り込む人の選択（読み取り直後は全員未チェック）
+  const [picked, setPicked] = useState(() => new Set()); // newOnes の添字
+  const [openGroups, setOpenGroups] = useState(() => new Set());
+  const [notionFilter, setNotionFilter] = useState("");
+
+  // グループごとにまとめる（絞り込み語は、グループ名・名前・Xアカウント・タグに部分一致）
+  const notionGroups = useMemo(() => {
+    const q = normalizeForMatch(notionFilter);
+    const map = new Map();
+    notion.newOnes.forEach((p, idx) => {
+      if (q) {
+        const hay = normalizeForMatch(`${p.groupName}${p.name}${p.account}${p.personalTag}`);
+        if (!hay.includes(q)) return;
+      }
+      if (!map.has(p.groupName)) map.set(p.groupName, []);
+      map.get(p.groupName).push({ ...p, idx });
+    });
+    return Array.from(map, ([groupName, items]) => ({ groupName, items }));
+  }, [notion.newOnes, notionFilter]);
+
+  const visibleIdx = useMemo(() => notionGroups.flatMap((g) => g.items.map((m) => m.idx)), [notionGroups]);
+
+  const togglePick = (idxList, on) =>
+    setPicked((prev) => {
+      const next = new Set(prev);
+      idxList.forEach((i) => (on ? next.add(i) : next.delete(i)));
+      return next;
+    });
+  const toggleOpenGroup = (g) =>
+    setOpenGroups((prev) => {
+      const next = new Set(prev);
+      next.has(g) ? next.delete(g) : next.add(g);
+      return next;
+    });
+
   const submitNotion = () => {
-    if (notion.newOnes.length === 0) return;
+    const chosen = notion.newOnes.filter((_, i) => picked.has(i));
+    if (chosen.length === 0) return;
     onSave(
-      notion.newOnes.map((p, i) => ({
+      chosen.map((p, i) => ({
         id: uid(),
         groupName: p.groupName,
         name: p.name,
@@ -444,14 +483,64 @@ function BulkMemberForm({ onCancel, onSave, existingMembers = [] }) {
                 </p>
                 {notion.newOnes.length > 0 ? (
                   <>
-                    <div className="flex flex-wrap gap-1.5 max-h-40 overflow-y-auto">
-                      {notion.newOnes.map((p, i) => (
-                        <span key={i} className="text-[11px] bg-white rounded-full px-2 py-1 text-gray-600">
-                          {p.name}<span className="text-gray-400">（{p.groupName}）</span>
-                        </span>
-                      ))}
+                    <input
+                      type="text"
+                      value={notionFilter}
+                      onChange={(e) => setNotionFilter(e.target.value)}
+                      placeholder="グループ名・名前で絞り込み"
+                      className="w-full rounded-xl bg-white border border-gray-200 px-3 py-2 text-xs outline-none focus:border-indigo-300"
+                    />
+                    <div className="flex gap-2 text-[11px]">
+                      <button type="button" onClick={() => togglePick(visibleIdx, true)} className="px-2 py-1 rounded-full bg-white text-indigo-600 font-bold">
+                        {notionFilter ? "表示中を全て選択" : "全て選択"}
+                      </button>
+                      <button type="button" onClick={() => togglePick(visibleIdx, false)} className="px-2 py-1 rounded-full bg-white text-gray-500 font-bold">
+                        全て外す
+                      </button>
                     </div>
-                    <SoftButton tone="indigo" onClick={submitNotion}>新規{notion.newOnes.length}人を登録</SoftButton>
+                    <div className="max-h-72 overflow-y-auto bg-white rounded-xl divide-y divide-gray-100">
+                      {notionGroups.length === 0 && <p className="text-xs text-gray-400 p-3">該当する人がいません。</p>}
+                      {notionGroups.map((g) => {
+                        const idxs = g.items.map((m) => m.idx);
+                        const count = idxs.filter((i) => picked.has(i)).length;
+                        const open = notionFilter ? true : openGroups.has(g.groupName);
+                        return (
+                          <div key={g.groupName} className="p-2">
+                            <div className="flex items-center gap-2">
+                              <input
+                                type="checkbox"
+                                checked={count === idxs.length}
+                                ref={(el) => { if (el) el.indeterminate = count > 0 && count < idxs.length; }}
+                                onChange={(e) => togglePick(idxs, e.target.checked)}
+                                className="w-4 h-4 accent-indigo-500"
+                              />
+                              <button type="button" onClick={() => toggleOpenGroup(g.groupName)} className="flex-1 text-left text-xs font-bold text-gray-700">
+                                {open ? "▼" : "▶"} {g.groupName}
+                                <span className="font-normal text-gray-400">（{count}/{idxs.length}人）</span>
+                              </button>
+                            </div>
+                            {open && (
+                              <div className="mt-1.5 ml-6 grid grid-cols-2 gap-x-2 gap-y-1">
+                                {g.items.map((m) => (
+                                  <label key={m.idx} className="flex items-center gap-1.5 text-xs text-gray-600">
+                                    <input
+                                      type="checkbox"
+                                      checked={picked.has(m.idx)}
+                                      onChange={(e) => togglePick([m.idx], e.target.checked)}
+                                      className="w-4 h-4 accent-indigo-500"
+                                    />
+                                    <span className="truncate">{m.name}</span>
+                                  </label>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                    <SoftButton tone="indigo" onClick={submitNotion} disabled={picked.size === 0}>
+                      {picked.size === 0 ? "登録する人を選んでください" : `選んだ${picked.size}人を登録`}
+                    </SoftButton>
                   </>
                 ) : (
                   <p className="text-xs text-gray-400">新しく追加する人はいません。</p>
