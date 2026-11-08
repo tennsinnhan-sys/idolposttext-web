@@ -334,6 +334,23 @@ function IconPicker({ colorKey, colorKey2, onChangeColor, onChangeColor2 }) {
 // 比較用に、スペース・全角半角・大文字小文字の違いを無視した形にする（例：「THE ENCORE」と「THEENCORE」を同じ扱いにする）
 const normalizeForMatch = (s) => (s || "").normalize("NFKC").replace(/\s+/g, "").toLowerCase();
 
+// グループ名の表記ゆれの統一ルール。先頭が正式な表記で、Notion取り込み時はこの表記で登録する
+const GROUP_ALIASES = [
+  ["ラフ×ラフ", "ラフラフ"],
+  ["#よーよーよー", "よーよーよー"],
+  ["#Mooove!", "Mooove!"],
+];
+// 先頭の「#」を除き、スペース・全角半角・大文字小文字を無視した比較用のキー
+const plainGroupKey = (name) => normalizeForMatch((name || "").replace(/^[#＃]+/, ""));
+const aliasKeyMap = new Map();
+const aliasDisplay = new Map();
+GROUP_ALIASES.forEach(([canonical, ...others]) => {
+  const key = plainGroupKey(canonical);
+  [canonical, ...others].forEach((n) => aliasKeyMap.set(plainGroupKey(n), key));
+  aliasDisplay.set(key, canonical);
+});
+const groupKeyOf = (name) => { const k = plainGroupKey(name); return aliasKeyMap.get(k) || k; };
+
 function BulkMemberForm({ onCancel, onSave, existingMembers = [] }) {
   const [raw, setRaw] = useState("");
 
@@ -346,11 +363,12 @@ function BulkMemberForm({ onCancel, onSave, existingMembers = [] }) {
     try {
       const rows = await apiFetchNotionIdols();
 
-      // 登録済みの人（同じグループ・同じ名前）は飛ばす。グループ名はアプリ側の表記（スペースの有無など）に合わせる
+      // 登録済みの人（同じグループ・同じ名前）は飛ばす。
+      // グループ名の表記は、統一ルール（GROUP_ALIASES）があればそれに、無ければアプリ側の既存の表記（スペースの有無など）に合わせる
       const groupSpelling = new Map();
       const existingKeys = new Set();
       existingMembers.forEach((m) => {
-        const g = normalizeForMatch(m.groupName);
+        const g = groupKeyOf(m.groupName);
         if (!groupSpelling.has(g)) groupSpelling.set(g, m.groupName);
         existingKeys.add(`${g}\u0000${normalizeForMatch(m.name)}`);
       });
@@ -358,8 +376,9 @@ function BulkMemberForm({ onCancel, onSave, existingMembers = [] }) {
       const newOnes = [];
       let skipped = 0;
       rows.forEach((r) => {
-        const groupName = groupSpelling.get(normalizeForMatch(r.groupName)) || r.groupName;
-        const key = `${normalizeForMatch(groupName)}\u0000${normalizeForMatch(r.name)}`;
+        const gk = groupKeyOf(r.groupName);
+        const groupName = aliasDisplay.get(gk) || groupSpelling.get(gk) || r.groupName;
+        const key = `${gk}\u0000${normalizeForMatch(r.name)}`;
         if (existingKeys.has(key)) { skipped += 1; return; }
         existingKeys.add(key);
         newOnes.push({ ...r, groupName });
