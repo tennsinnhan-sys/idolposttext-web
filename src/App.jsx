@@ -141,7 +141,7 @@ function buildText(template, values, listValues = {}) {
 
 import {
   apiConfigured, apiLoad, apiSave, apiGetMe, apiLogout, loginUrl, consumeUrlToken,
-  apiLoadSharedMembers, apiPublishSharedMember, apiDeleteSharedMember,
+  apiLoadSharedMembers, apiPublishSharedMember, apiDeleteSharedMember, apiFetchNotionIdols,
 } from "./apiClient";
 
 /* ------------------------------------------------------------------ */
@@ -331,8 +331,66 @@ function IconPicker({ colorKey, colorKey2, onChangeColor, onChangeColor2 }) {
 /* メンバー一括登録フォーム                                              */
 /* ------------------------------------------------------------------ */
 
-function BulkMemberForm({ onCancel, onSave }) {
+// 比較用に、スペース・全角半角・大文字小文字の違いを無視した形にする（例：「THE ENCORE」と「THEENCORE」を同じ扱いにする）
+const normalizeForMatch = (s) => (s || "").normalize("NFKC").replace(/\s+/g, "").toLowerCase();
+
+function BulkMemberForm({ onCancel, onSave, existingMembers = [] }) {
   const [raw, setRaw] = useState("");
+
+  // Notionの「アイドル一覧」からの取り込み
+  // idle | loading | ready | error
+  const [notion, setNotion] = useState({ status: "idle", newOnes: [], skipped: 0, total: 0, error: "" });
+
+  const fetchFromNotion = async () => {
+    setNotion({ status: "loading", newOnes: [], skipped: 0, total: 0, error: "" });
+    try {
+      const rows = await apiFetchNotionIdols();
+
+      // 登録済みの人（同じグループ・同じ名前）は飛ばす。グループ名はアプリ側の表記（スペースの有無など）に合わせる
+      const groupSpelling = new Map();
+      const existingKeys = new Set();
+      existingMembers.forEach((m) => {
+        const g = normalizeForMatch(m.groupName);
+        if (!groupSpelling.has(g)) groupSpelling.set(g, m.groupName);
+        existingKeys.add(`${g}\u0000${normalizeForMatch(m.name)}`);
+      });
+
+      const newOnes = [];
+      let skipped = 0;
+      rows.forEach((r) => {
+        const groupName = groupSpelling.get(normalizeForMatch(r.groupName)) || r.groupName;
+        const key = `${normalizeForMatch(groupName)}\u0000${normalizeForMatch(r.name)}`;
+        if (existingKeys.has(key)) { skipped += 1; return; }
+        existingKeys.add(key);
+        newOnes.push({ ...r, groupName });
+      });
+      setNotion({ status: "ready", newOnes, skipped, total: rows.length, error: "" });
+    } catch (e) {
+      const messages = {
+        401: "ログインが切れています。いったんログアウトして、もう一度ログインしてください。",
+        403: "この機能は、許可されたGoogleアカウントでログインしている時だけ使えます。",
+        404: "サーバー（Worker）がまだ更新されていません。再デプロイしてください。",
+        501: "サーバー（Worker）にNotionのキーが設定されていません。",
+      };
+      const message = messages[e.status] || `Notionから読み取れませんでした${e.message ? `：${e.message}` : ""}`;
+      setNotion({ status: "error", newOnes: [], skipped: 0, total: 0, error: message });
+    }
+  };
+
+  const submitNotion = () => {
+    if (notion.newOnes.length === 0) return;
+    onSave(
+      notion.newOnes.map((p, i) => ({
+        id: uid(),
+        groupName: p.groupName,
+        name: p.name,
+        account: p.account,
+        personalTag: p.personalTag,
+        iconColorName: COLORS[i % COLORS.length].key,
+        iconSymbol: "star",
+      }))
+    );
+  };
 
   const parsed = useMemo(() => {
     return raw
@@ -368,6 +426,40 @@ function BulkMemberForm({ onCancel, onSave }) {
   return (
     <Card>
       <div className="space-y-3">
+        {apiConfigured && (
+          <div className="bg-indigo-50 rounded-2xl p-3 space-y-2">
+            <p className="text-xs font-bold text-indigo-600">Notionの「アイドル一覧」から取り込む</p>
+            <p className="text-[11px] text-gray-500 leading-relaxed">
+              登録済みの人（同じグループ・同じ名前）は飛ばして、新しい人だけを追加します。
+            </p>
+            <SoftButton tone="indigo" onClick={fetchFromNotion} disabled={notion.status === "loading"}>
+              {notion.status === "loading" ? "読み取り中…" : "Notionから読み取る"}
+            </SoftButton>
+            {notion.status === "error" && <p className="text-xs text-red-500">{notion.error}</p>}
+            {notion.status === "ready" && (
+              <div className="space-y-2">
+                <p className="text-xs text-gray-600">
+                  Notion {notion.total}人のうち、新規 <span className="font-bold text-indigo-600">{notion.newOnes.length}人</span>
+                  ／登録済み {notion.skipped}人（スキップ）
+                </p>
+                {notion.newOnes.length > 0 ? (
+                  <>
+                    <div className="flex flex-wrap gap-1.5 max-h-40 overflow-y-auto">
+                      {notion.newOnes.map((p, i) => (
+                        <span key={i} className="text-[11px] bg-white rounded-full px-2 py-1 text-gray-600">
+                          {p.name}<span className="text-gray-400">（{p.groupName}）</span>
+                        </span>
+                      ))}
+                    </div>
+                    <SoftButton tone="indigo" onClick={submitNotion}>新規{notion.newOnes.length}人を登録</SoftButton>
+                  </>
+                ) : (
+                  <p className="text-xs text-gray-400">新しく追加する人はいません。</p>
+                )}
+              </div>
+            )}
+          </div>
+        )}
         <div>
           <p className="text-xs text-gray-400 mb-1.5">
             1行に1人ずつ、以下の形式で貼り付けてください（グループ名と名前は必須、それ以外は空欄でも可）。グループ共通の項目（略称・公式X・レギュレーション・読み方）は、登録後に「メンバー一覧」でグループごとに設定してください。
@@ -994,6 +1086,7 @@ function MembersPage({ members, setMembers, groupRegulations, setGroupRegulation
       <div>
         <TopBar title="メンバー一括登録" onBack={() => setEditing(null)} />
         <BulkMemberForm
+          existingMembers={members}
           onCancel={() => setEditing(null)}
           onSave={(newMembers) => {
             setMembers((prev) => [...prev, ...newMembers]);

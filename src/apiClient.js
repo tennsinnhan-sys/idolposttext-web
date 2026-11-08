@@ -120,3 +120,14 @@ export async function apiDeleteSharedMember(id) {
   });
   if (!res.ok) throw new Error("delete shared member failed");
 }
+
+// Notionの「アイドル一覧」を読み取る（オーナーのGoogleアカウントだけ許可されている）
+export async function apiFetchNotionIdols() {
+  const res = await fetch(`${API_BASE}/api/notion/idols`, { headers: { ...authHeaders() } });
+  if (res.ok) return (await res.json()).members || [];
+  let detail = "";
+  try { detail = (await res.json()).detail || ""; } catch { /* 本文が読めなくても続行 */ }
+  const err = new Error(detail || `notion import failed: ${res.status}`);
+  err.status = res.status;
+  throw err;
+}
